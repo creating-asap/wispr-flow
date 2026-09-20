@@ -111,14 +111,44 @@ export default function App() {
   const [countdown, setCountdown] = useState(null);
   const pollRef = useRef(null);
 
-  // Load config
+  // Load config and resume session
   useEffect(() => {
+    let resolvedApiBase = '/api';
     fetch('/config.json')
       .then(res => res.json())
       .then(data => {
-        if (data.apiBase) setApiBase(data.apiBase.trim().replace(/\/+$/, ''));
+        if (data.apiBase) resolvedApiBase = data.apiBase.trim().replace(/\/+$/, '');
+        setApiBase(resolvedApiBase);
       })
-      .catch(() => setApiBase('/api'));
+      .catch(() => setApiBase(resolvedApiBase))
+      .finally(() => {
+        const savedChangeId = sessionStorage.getItem('dm_change_id');
+        const currentToken = sessionStorage.getItem('dm_token');
+        if (savedChangeId && currentToken) {
+          setLoading(true);
+          fetch(`${resolvedApiBase}/changes/${savedChangeId}`, {
+            headers: {
+              'Authorization': `Bearer ${currentToken}`,
+              'Content-Type': 'application/json'
+            }
+          })
+          .then(res => {
+            if (res.ok) return res.json();
+            throw new Error('Failed to resume');
+          })
+          .then(data => {
+            setActiveChange(data);
+            if (data.status === 'PENDING' && data.expires_at && data.server_time) {
+              const remaining = data.expires_at - data.server_time;
+              setCountdown(remaining > 0 ? remaining : 0);
+            }
+          })
+          .catch(() => {
+            sessionStorage.removeItem('dm_change_id');
+          })
+          .finally(() => setLoading(false));
+        }
+      });
   }, []);
 
   // Sync token to sessionStorage
@@ -127,6 +157,15 @@ export default function App() {
       sessionStorage.setItem('dm_token', token);
     }
   }, [token]);
+
+  // Sync active change to sessionStorage
+  useEffect(() => {
+    if (activeChange) {
+      sessionStorage.setItem('dm_change_id', activeChange.change_id || activeChange.id);
+    } else {
+      sessionStorage.removeItem('dm_change_id');
+    }
+  }, [activeChange]);
 
   const getAuthHeaders = useCallback(() => ({
     'Authorization': `Bearer ${token}`,
