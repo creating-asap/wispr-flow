@@ -111,6 +111,14 @@ export default function App() {
   const [countdown, setCountdown] = useState(null);
   const pollRef = useRef(null);
 
+  const [history, setHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('dm_history')) || [];
+    } catch {
+      return [];
+    }
+  });
+
   // Load config and resume session
   useEffect(() => {
     let resolvedApiBase = '/api';
@@ -162,6 +170,26 @@ export default function App() {
   useEffect(() => {
     if (activeChange) {
       sessionStorage.setItem('dm_change_id', activeChange.change_id || activeChange.id);
+      
+      setHistory(prev => {
+        const id = activeChange.change_id || activeChange.id;
+        const exists = prev.find(item => item.id === id);
+        let summary = 'Change operations';
+        if (activeChange.delta && activeChange.delta.length > 0) {
+           summary = generatePlainSummary(activeChange.delta, activeChange.ttl_seconds);
+        }
+        const newItem = {
+          id,
+          sg_id: activeChange.sg_id || (exists ? exists.sg_id : 'Unknown SG'),
+          summary,
+          status: activeChange.status,
+          timestamp: activeChange.created_at || (exists ? exists.timestamp : Date.now() / 1000)
+        };
+        const next = [newItem, ...prev.filter(item => item.id !== id)].slice(0, 10);
+        localStorage.setItem('dm_history', JSON.stringify(next));
+        return next;
+      });
+      
     } else {
       sessionStorage.removeItem('dm_change_id');
     }
@@ -267,6 +295,36 @@ export default function App() {
       if (res.ok && data) {
         setActiveChange(prev => ({ ...prev, ...data }));
         setCountdown(null);
+      } else {
+        setError(friendlyError(data, res.status) || `HTTP Error: ${res.status}`);
+      }
+    } catch {
+      setError('Network error — unable to reach API');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadHistoryItem = async (changeId) => {
+    setError('');
+    if (!token.trim()) {
+      setError('Please enter a bearer token to view this change');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiBase}/changes/${changeId}`, {
+        headers: getAuthHeaders()
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data) {
+        setActiveChange(data);
+        if (data.status === 'PENDING' && data.expires_at && data.server_time) {
+          const remaining = data.expires_at - data.server_time;
+          setCountdown(remaining > 0 ? remaining : 0);
+        } else {
+          setCountdown(null);
+        }
       } else {
         setError(friendlyError(data, res.status) || `HTTP Error: ${res.status}`);
       }
@@ -555,6 +613,31 @@ export default function App() {
           <button type="submit" disabled={loading} className="btn-primary btn-block">
             {loading ? 'Applying Change…' : 'Apply Change'}
           </button>
+
+          {history.length > 0 && (
+            <div className="history-list">
+              <h4 className="history-header">Recent Changes</h4>
+              <div className="history-items">
+                {history.map(item => (
+                  <button 
+                    key={item.id} 
+                    type="button"
+                    className="history-item" 
+                    onClick={() => loadHistoryItem(item.id)}
+                  >
+                    <div className="history-item-top">
+                      <span className="history-item-id">{item.id}</span>
+                      <span className={`status-pill status-${item.status.toLowerCase()} history-item-status`}>
+                        {item.status}
+                      </span>
+                    </div>
+                    <div className="history-item-sg">Target: {item.sg_id}</div>
+                    <div className="history-item-summary">{item.summary}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </form>
       ) : (
         <div className="card status-card">
