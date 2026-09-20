@@ -776,6 +776,13 @@
   text-transform: uppercase;
 }
 
+.countdown-clock-time {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-top: 0.4rem;
+  font-weight: 500;
+}
+
 .countdown-static {
   width: 250px;
   height: 250px;

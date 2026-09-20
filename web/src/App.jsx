@@ -166,6 +166,15 @@ export default function App() {
     return () => clearInterval(pollRef.current);
   }, [activeChange?.change_id, activeChange?.id, activeChange?.status, apiBase, getAuthHeaders, token]);
 
+  // Document title update
+  useEffect(() => {
+    if (activeChange && activeChange.status === 'PENDING' && countdown !== null) {
+      document.title = `${countdown}s left - Deadman`;
+    } else {
+      document.title = 'Deadman';
+    }
+  }, [countdown, activeChange?.status]);
+
   const submitChange = async (e) => {
     e.preventDefault();
     setError('');
@@ -626,6 +635,9 @@ export default function App() {
                   <div className="countdown-inner">
                     <span className="countdown-value" style={{ color: ringColor }}>{countdown}</span>
                     <span className="countdown-unit">SECONDS REMAINING</span>
+                    {activeChange?.expires_at && (
+                      <span className="countdown-clock-time">until {formatTime(activeChange.expires_at)}</span>
+                    )}
                   </div>
                 </div>
               ) : (
