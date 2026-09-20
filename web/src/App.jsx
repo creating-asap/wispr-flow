@@ -82,6 +82,19 @@ function checkDangerousRevoke(ops) {
   });
 }
 
+function checkDangerousAuthorize(ops) {
+  if (!ops || !Array.isArray(ops)) return false;
+  return ops.some(op => {
+    if (op.action !== 'AUTHORIZE') return false;
+    if ((op.protocol || '').toLowerCase() !== 'tcp') return false;
+    const cidr = (op.cidr || '').trim();
+    if (cidr !== '0.0.0.0/0') return false;
+    const from = parseInt(op.from_port, 10);
+    const to = parseInt(op.to_port, 10);
+    return [22, 3389, 3306, 5432, 1433, 27017].some(p => p >= from && p <= to);
+  });
+}
+
 export default function App() {
   const [apiBase, setApiBase] = useState('/api');
   const [token, setToken] = useState(() => sessionStorage.getItem('dm_token') || '');
@@ -270,6 +283,7 @@ export default function App() {
   );
 
   const hasDangerousRevoke = checkDangerousRevoke(form.ops);
+  const hasDangerousAuthorize = checkDangerousAuthorize(form.ops);
   const plainSummary = generatePlainSummary(form.ops, form.ttl_seconds);
 
   return (
@@ -469,6 +483,15 @@ export default function App() {
               <span className="calm-warning-icon" aria-hidden="true">⚠️</span>
               <div className="calm-warning-content">
                 <strong>Access warning:</strong> This may cut off access. Deadman will undo it after the timer unless you confirm.
+              </div>
+            </div>
+          )}
+
+          {hasDangerousAuthorize && (
+            <div className="calm-warning-box" role="status">
+              <span className="calm-warning-icon" aria-hidden="true">⚠️</span>
+              <div className="calm-warning-content">
+                <strong>Risk warning:</strong> Opening sensitive ports to 0.0.0.0/0 is risky. Deadman will undo it after the timer unless you confirm.
               </div>
             </div>
           )}
