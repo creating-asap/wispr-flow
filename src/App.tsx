@@ -166,7 +166,7 @@ function degreesToCardinal(deg: number): string {
 // ============================================================================
 export default function App() {
   // --------------------------------------------------------------------------
-  // THEME STATE & RESOLUTION ENGINE (THEME UPGRADE 1 & 4)
+  // THEME STATE & RESOLUTION ENGINE
   // --------------------------------------------------------------------------
   const [theme, setTheme] = useState<ThemeMode>(() => {
     try {
@@ -243,10 +243,7 @@ export default function App() {
   const isNightTheme = activeTab === 'odour';
 
   // --------------------------------------------------------------------------
-  // THEME EFFECT (THEME UPGRADE 1 & 4)
-  // - Listens to theme state and window.matchMedia('(prefers-color-scheme: dark)')
-  // - Dynamically adds or removes 'dark' class on document.documentElement (<html>)
-  // - CRITICAL: Odour Witness (2 AM) forces dark mode regardless of theme setting
+  // THEME EFFECT: System / Dark / Light + Odour Witness Override
   // --------------------------------------------------------------------------
   useEffect(() => {
     try {
@@ -258,7 +255,7 @@ export default function App() {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
     const applyThemeClass = () => {
-      // THEME UPGRADE 4: Odour Witness (2 AM) overrides and forces dark mode
+      // Odour Witness (2 AM) overrides and forces dark mode
       if (activeTab === 'odour') {
         document.documentElement.classList.add('dark');
         return;
@@ -269,7 +266,6 @@ export default function App() {
       } else if (theme === 'light') {
         document.documentElement.classList.remove('dark');
       } else {
-        // System preference
         if (mediaQuery.matches) {
           document.documentElement.classList.add('dark');
         } else {
@@ -293,7 +289,7 @@ export default function App() {
   }, [theme, activeTab]);
 
   // --------------------------------------------------------------------------
-  // STATE: Task Voice Input Card (Section 2 & 3)
+  // STATE: Task Voice Input & Wispr Flow Desktop Optimization
   // --------------------------------------------------------------------------
   const [taskInputText, setTaskInputText] = useState('');
   const [taskInterimPreview, setTaskInterimPreview] = useState('');
@@ -305,14 +301,23 @@ export default function App() {
   const [micBlockedHelp, setMicBlockedHelp] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
-  // Sync default target save tab to active tab when active tab changes (if active tab is a task tab)
+  // UPGRADE 3: Wispr Upsell Banner permanent reveal on first fallback mic usage
+  const [showWisprUpsell, setShowWisprUpsell] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('wispr_upsell_seen') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+
+  // Sync default target save tab to active tab when active tab changes
   useEffect(() => {
     if (activeTab !== 'verifier' && activeTab !== 'odour') {
       setTargetSaveTab(activeTab);
     }
   }, [activeTab]);
 
-  // Combined list of all available task tabs (Default + Custom)
+  // Combined list of all available task tabs
   const allTaskTabs = useMemo(() => {
     const list = [...DEFAULT_TASK_TABS];
     customTabs.forEach((ct) => {
@@ -322,7 +327,7 @@ export default function App() {
   }, [customTabs]);
 
   // --------------------------------------------------------------------------
-  // SPEECH RECOGNITION (FALLBACK BROWSER MIC - HARDCODED en-IN & maxAlternatives=1)
+  // UPGRADE 2: STRICT PUSH-TO-TALK (WALKIE-TALKIE) INFERIOR FALLBACK MIC
   // --------------------------------------------------------------------------
   const taskRecognitionRef = useRef<any>(null);
 
@@ -333,20 +338,24 @@ export default function App() {
     );
   }, []);
 
-  const toggleTaskMic = () => {
+  // Start Push-to-Talk Fallback Mic
+  const handleStartFallbackMic = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+
+    // Trigger Wispr upsell banner on first fallback mic interaction
+    if (!showWisprUpsell) {
+      setShowWisprUpsell(true);
+      try {
+        localStorage.setItem('wispr_upsell_seen', 'true');
+      } catch (err) {}
+    }
+
     if (!isSpeechSupported) {
-      alert('Browser speech recognition is not available. Please use Wispr Flow (Fn or Ctrl+Win) or Chrome/Edge.');
+      alert('Browser speech recognition is not supported in this browser. Please use Wispr Flow (Fn or Ctrl+Win).');
       return;
     }
 
-    if (isTaskListening) {
-      if (taskRecognitionRef.current) {
-        taskRecognitionRef.current.stop();
-      }
-      setIsTaskListening(false);
-      setTaskInterimPreview('');
-      return;
-    }
+    if (isTaskListening) return;
 
     try {
       const SpeechRecognition =
@@ -354,7 +363,6 @@ export default function App() {
       const rec = new SpeechRecognition();
       rec.continuous = true;
       rec.interimResults = true;
-      // Hardcoded to 'en-IN' and maxAlternatives = 1
       rec.lang = 'en-IN';
       rec.maxAlternatives = 1;
 
@@ -363,10 +371,6 @@ export default function App() {
         setMicBlockedHelp(false);
       };
 
-      // CRITICAL ANTI-STUTTER FIX:
-      // Loop from event.resultIndex to results.length.
-      // ONLY if isFinal === true, append transcript ONCE to committed text and clear interim.
-      // If isFinal === false, ONLY update liveInterimPreview badge - NEVER append to textarea!
       rec.onresult = (event: any) => {
         let interim = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -390,7 +394,7 @@ export default function App() {
       };
 
       rec.onerror = (e: any) => {
-        console.warn('Speech recognition error:', e.error);
+        console.warn('Fallback Speech recognition error:', e.error);
         if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
           setMicBlockedHelp(true);
         }
@@ -410,6 +414,19 @@ export default function App() {
       setIsTaskListening(false);
       setMicBlockedHelp(true);
     }
+  };
+
+  // Stop Push-to-Talk Fallback Mic
+  const handleStopFallbackMic = (e?: React.SyntheticEvent) => {
+    if (e) e.preventDefault();
+    if (taskRecognitionRef.current && isTaskListening) {
+      try {
+        taskRecognitionRef.current.stop();
+      } catch (err) {
+        console.warn('Error stopping recognition', err);
+      }
+    }
+    setIsTaskListening(false);
   };
 
   // Add quick phrase
@@ -776,7 +793,7 @@ export default function App() {
       }
     });
 
-    // 2. Analyze Negations (Dangerous inversion check!)
+    // 2. Analyze Negations
     speakerConstraints.negations.forEach((neg) => {
       const reg = new RegExp(`\\b${neg}\\s+([a-zA-Z]+)`, 'i');
       const sContext = speakerText.match(reg);
@@ -796,7 +813,7 @@ export default function App() {
       }
     });
 
-    // 3. Analyze Conditions (e.g. before vs after, only if)
+    // 3. Analyze Conditions
     speakerConstraints.conditions.forEach((cond) => {
       if (cond === 'before' && lLower.includes('after')) {
         contradicted.push({
@@ -1045,7 +1062,7 @@ This incident log has been scientifically recorded with real-time meteorological
   };
 
   // ==========================================================================
-  // RENDER (THEME UPGRADE 2 & 4: DYNAMIC LIGHT / DARK / PURE BLACK ODOUR)
+  // RENDER
   // ==========================================================================
   return (
     <div
@@ -1080,13 +1097,13 @@ This incident log has been scientifically recorded with real-time meteorological
               </div>
               <div>
                 <h1 className="font-extrabold text-base sm:text-lg tracking-tight leading-none flex items-center gap-2 text-slate-900 dark:text-white">
-                  <span>Wispr Workspace</span>
+                  <span>Wispr Flow Workspace</span>
                   <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/40">
-                    Flow v2
+                    Native v2
                   </span>
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Voice Workspace · Readback Verifier · 2 AM Odour Witness
+                  Universal Desktop Dictation · Readback Verifier · 2 AM Odour Witness
                 </p>
               </div>
             </div>
@@ -1106,7 +1123,7 @@ This incident log has been scientifically recorded with real-time meteorological
                 </kbd>
               </div>
 
-              {/* THEME TOGGLE UI (THEME UPGRADE 3) */}
+              {/* Theme Toggle UI */}
               <div
                 className="flex items-center rounded-xl p-1 bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-inner"
                 title="Theme: Light, Dark, or System"
@@ -1298,7 +1315,7 @@ This incident log has been scientifically recorded with real-time meteorological
               </div>
             ))}
 
-            {/* 5. + New Tab Button */}
+            {/* + New Tab Button */}
             {isCreatingTab ? (
               <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-indigo-400 dark:border-indigo-500/50 rounded-xl px-2 py-1 shadow-sm dark:shadow-lg">
                 <input
@@ -1368,7 +1385,7 @@ This incident log has been scientifically recorded with real-time meteorological
       </header>
 
       {/* =====================================================================
-          MAIN CONTENT AREA (RESPONSIVE LIGHT / DARK PALETTE - THEME UPGRADE 2)
+          MAIN CONTENT AREA
           ===================================================================== */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* ===================================================================
@@ -1381,9 +1398,9 @@ This incident log has been scientifically recorded with real-time meteorological
               <div className="p-4 rounded-2xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-950/30 backdrop-blur-md text-amber-900 dark:text-amber-200 text-sm flex items-start gap-3 shadow-md">
                 <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
                 <div className="flex-1">
-                  <p className="font-semibold text-amber-800 dark:text-amber-300">Microphone Access Restricted</p>
+                  <p className="font-semibold text-amber-800 dark:text-amber-300">Browser Mic Blocked in Frame</p>
                   <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-200/80">
-                    Browser security blocks mic access in embedded frames. Wispr Flow desktop app still works universally using your global hotkey (Fn or Ctrl+Win). Alternatively, open this app in a standalone tab.
+                    Wispr Flow desktop app dictates globally across your entire OS using <span className="font-mono font-bold">Fn</span> or <span className="font-mono font-bold">Ctrl+Win</span> with zero browser mic permissions required!
                   </p>
                   <button
                     onClick={() => window.open(window.location.href, '_blank')}
@@ -1401,7 +1418,7 @@ This incident log has been scientifically recorded with real-time meteorological
               </div>
             )}
 
-            {/* Voice Input Card: Responsive Frosted Glass (THEME UPGRADE 2) */}
+            {/* Voice Input Card: AGGRESSIVE WISPR BRANDING (UPGRADE 1) */}
             <div className="bg-white/70 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/50 shadow-xl rounded-2xl p-5 sm:p-6 transition-all text-slate-900 dark:text-slate-100">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <div className="flex items-center gap-2">
@@ -1409,30 +1426,51 @@ This incident log has been scientifically recorded with real-time meteorological
                     <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 block">
-                      Wispr Flow Voice Dictation
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-slate-800 dark:text-slate-200 block">
+                      Wispr Flow Native Workspace
                     </span>
                     <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
-                      Focus input and hold your global desktop hotkey
+                      Desktop-accelerated speech-to-text with zero lag
                     </span>
                   </div>
                 </div>
 
                 {/* Desktop Hotkey Pills */}
                 <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                  <span className="text-[11px] hidden sm:inline">Hotkey:</span>
-                  <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-indigo-700 dark:text-indigo-300 font-semibold shadow-xs">
+                  <span className="text-[11px] hidden sm:inline">Global Hotkey:</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-indigo-700 dark:text-indigo-300 font-bold shadow-xs">
                     Fn
                   </span>
                   <span className="text-slate-400 dark:text-slate-500">/</span>
-                  <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-indigo-700 dark:text-indigo-300 font-semibold shadow-xs">
+                  <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-indigo-700 dark:text-indigo-300 font-bold shadow-xs">
                     Ctrl+Win
                   </span>
                 </div>
               </div>
 
-              {/* Textarea: Responsive Input Styling (THEME UPGRADE 2) */}
+              {/* Textarea with Glowing Badge top-left, "X" Clear button top-right, and aggressive placeholder (UPGRADE 1) */}
               <div className="relative">
+                {/* Permanent Glowing Wispr/Sparkles Badge Top-Left */}
+                <div className="absolute top-2.5 left-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-[11px] font-bold shadow-sm dark:shadow-[0_0_12px_rgba(99,102,241,0.25)] select-none backdrop-blur-sm pointer-events-none">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 animate-pulse" />
+                  <span>Wispr Flow Active</span>
+                </div>
+
+                {/* Floating "X" (Clear Input) Button Top-Right */}
+                {taskInputText && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTaskInputText('');
+                      setTaskInterimPreview('');
+                    }}
+                    className="absolute top-2.5 right-3 z-10 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200 dark:border-slate-700 transition-all shadow-xs"
+                    title="Clear Input"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+
                 <textarea
                   value={taskInputText}
                   onChange={(e) => setTaskInputText(e.target.value)}
@@ -1443,8 +1481,8 @@ This incident log has been scientifically recorded with real-time meteorological
                     }
                   }}
                   rows={3}
-                  placeholder="Hold your Wispr Flow hotkey (Fn or Ctrl+Win) to speak..."
-                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl p-4 text-base sm:text-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all min-h-[110px] resize-y shadow-xs"
+                  placeholder="Wispr Flow Active: Hold your hotkey (Fn / Ctrl+Win) to dictate with 100% accuracy..."
+                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl pt-11 pb-4 px-4 text-base sm:text-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all min-h-[120px] resize-y shadow-xs"
                 />
               </div>
 
@@ -1457,7 +1495,7 @@ This incident log has been scientifically recorded with real-time meteorological
                 </div>
               )}
 
-              {/* Controls Bar Below Textarea: Fallback Mic & Quick Phrases */}
+              {/* Controls Bar Below Textarea: Strict Push-to-Talk Inferior Fallback Mic & Quick Phrases (UPGRADE 2) */}
               <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3">
                 {/* 1-Tap Quick Phrase Bar */}
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -1474,30 +1512,53 @@ This incident log has been scientifically recorded with real-time meteorological
                   ))}
                 </div>
 
-                {/* Subtle Fallback Browser Mic Button */}
+                {/* "INFERIOR FALLBACK" MIC: STRICT PUSH-TO-TALK (UPGRADE 2) */}
                 <button
                   type="button"
-                  onClick={toggleTaskMic}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+                  onMouseDown={handleStartFallbackMic}
+                  onMouseUp={handleStopFallbackMic}
+                  onMouseLeave={handleStopFallbackMic}
+                  onTouchStart={handleStartFallbackMic}
+                  onTouchEnd={handleStopFallbackMic}
+                  onTouchCancel={handleStopFallbackMic}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border select-none transition-all cursor-pointer ${
                     isTaskListening
-                      ? 'bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-500/50 shadow-xs dark:shadow-[0_0_12px_rgba(244,63,94,0.3)] animate-pulse'
-                      : 'bg-slate-100 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/80 dark:hover:bg-slate-800/80 hover:border-slate-300 dark:hover:border-slate-600'
+                      ? 'border-rose-500/50 bg-rose-500/20 text-rose-300 ring-2 ring-rose-500 animate-pulse'
+                      : 'border-amber-500/30 text-amber-600 dark:text-amber-500/70 hover:bg-amber-500/10'
                   }`}
-                  title="Use Web Speech API browser mic as fallback (Hardcoded en-IN)"
+                  title="Push-to-Talk (Hold while speaking). Warning: Web Speech has lower accuracy than Wispr Flow desktop."
                 >
-                  {isTaskListening ? (
-                    <>
-                      <MicOff className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                      <span>Listening (en-IN)...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Mic className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                      <span>Fallback Browser Mic</span>
-                    </>
-                  )}
+                  <Mic className={`w-3.5 h-3.5 ${isTaskListening ? 'text-rose-400 animate-bounce' : 'text-amber-500/70'}`} />
+                  <span>
+                    {isTaskListening
+                      ? 'Browser Mic (Low Accuracy)...'
+                      : 'Fallback Browser Mic (Hold to Talk)'}
+                  </span>
                 </button>
               </div>
+
+              {/* THE WISPR UPSELL BANNER (UPGRADE 3) */}
+              {showWisprUpsell && (
+                <div className="bg-indigo-500/10 border border-indigo-500/30 p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-3 shadow-sm">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <p className="text-xs text-indigo-900 dark:text-indigo-200 leading-relaxed">
+                      <span className="font-bold">Browser microphones struggle with Indian accents and background noise.</span> For perfect Readback Verifier accuracy, you need Wispr Flow.
+                    </p>
+                  </div>
+                  <a
+                    href="https://www.wisprflow.ai/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold whitespace-nowrap shadow-sm flex items-center justify-center gap-1.5 transition-all self-end sm:self-auto flex-shrink-0"
+                  >
+                    <span>Download Wispr Flow (Free)</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
 
               {/* Save to Tab Pill Buttons */}
               <div className="mt-4 pt-4 border-t border-slate-200/80 dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
@@ -1818,11 +1879,25 @@ This incident log has been scientifically recorded with real-time meteorological
                 </div>
               ) : (
                 <div className="relative">
+                  {/* Floating Clear Button */}
+                  {speakerText && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSpeakerText('');
+                        setSpeakerInterim('');
+                      }}
+                      className="absolute top-2.5 right-3 z-10 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-all"
+                      title="Clear text"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                   <textarea
                     value={speakerText}
                     onChange={(e) => setSpeakerText(e.target.value)}
                     rows={3}
-                    placeholder="Hold your Wispr Flow hotkey (Fn or Ctrl+Win) to speak speaker instruction..."
+                    placeholder="Wispr Flow Active: Hold your hotkey (Fn / Ctrl+Win) to speak speaker instruction..."
                     className="w-full rounded-xl bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 p-4 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 min-h-[100px] transition-all shadow-xs"
                   />
                 </div>
@@ -1834,7 +1909,7 @@ This incident log has been scientifically recorded with real-time meteorological
                 </div>
               )}
 
-              {/* Confirmation Chips: Vibrant Glowing Tags */}
+              {/* Confirmation Chips */}
               {!isPassPhoneLocked && speakerText.trim() && (
                 <div className="mt-4 pt-3.5 border-t border-slate-200 dark:border-slate-700/50 space-y-2.5">
                   <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
@@ -1942,7 +2017,7 @@ This incident log has been scientifically recorded with real-time meteorological
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
                     isSpeakerListening
                       ? 'bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-500/50 animate-pulse'
-                      : 'bg-slate-100 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60 hover:text-slate-900 dark:hover:text-slate-200'
+                      : 'border-amber-500/30 text-amber-600 dark:text-amber-500/70 hover:bg-amber-500/10'
                   }`}
                 >
                   <Mic className="w-3.5 h-3.5" />
@@ -1969,11 +2044,24 @@ This incident log has been scientifically recorded with real-time meteorological
               </div>
 
               <div className="relative">
+                {listenerText && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setListenerText('');
+                      setListenerInterim('');
+                    }}
+                    className="absolute top-2.5 right-3 z-10 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-all"
+                    title="Clear text"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
                 <textarea
                   value={listenerText}
                   onChange={(e) => setListenerText(e.target.value)}
                   rows={3}
-                  placeholder="Hold your Wispr Flow hotkey (Fn or Ctrl+Win) to speak listener readback..."
+                  placeholder="Wispr Flow Active: Hold your hotkey (Fn / Ctrl+Win) to speak listener readback..."
                   className="w-full rounded-xl bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700/80 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 p-4 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 min-h-[100px] transition-all shadow-xs"
                 />
               </div>
@@ -1992,7 +2080,7 @@ This incident log has been scientifically recorded with real-time meteorological
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
                     isListenerListening
                       ? 'bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-500/50 animate-pulse'
-                      : 'bg-slate-100 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60 hover:text-slate-900 dark:hover:text-slate-200'
+                      : 'border-amber-500/30 text-amber-600 dark:text-amber-500/70 hover:bg-amber-500/10'
                   }`}
                 >
                   <Mic className="w-3.5 h-3.5" />
@@ -2110,7 +2198,7 @@ This incident log has been scientifically recorded with real-time meteorological
 
         {/* ===================================================================
             VIEW 3: ODOUR WITNESS (2 AM - PURE BLACK #000000 & WEATHER WIDGET)
-            CRITICAL THEME OVERRIDE (THEME UPGRADE 4):
+            CRITICAL THEME OVERRIDE:
             - Forces pure black #000000 background and white text regardless of theme!
             =================================================================== */}
         {activeTab === 'odour' && (
@@ -2149,7 +2237,7 @@ This incident log has been scientifically recorded with real-time meteorological
                     value={odourNotes}
                     onChange={(e) => setOdourNotes(e.target.value)}
                     rows={2}
-                    placeholder="Hold your Wispr Flow hotkey (Fn or Ctrl+Win) to describe the smell..."
+                    placeholder="Wispr Flow Active: Hold your hotkey (Fn / Ctrl+Win) to describe the smell..."
                     className="w-full rounded-xl bg-black border border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 p-4 text-base text-slate-100 placeholder:text-slate-600 min-h-[90px] transition-all"
                   />
                 </div>
@@ -2162,7 +2250,7 @@ This incident log has been scientifically recorded with real-time meteorological
                   <button
                     type="button"
                     onClick={toggleOdourMic}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-black text-slate-400 hover:text-amber-300 border border-slate-800 hover:border-amber-500/40 transition-all"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-black text-amber-500/70 border border-amber-500/30 hover:bg-amber-500/10 transition-all"
                   >
                     <Mic className="w-3 h-3" />
                     <span>Fallback Browser Mic</span>
