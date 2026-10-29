@@ -25,6 +25,7 @@ import {
   Compass,
   Moon,
   Sun,
+  Monitor,
   MapPin,
   Activity,
   Sparkles,
@@ -68,6 +69,8 @@ export type TabKey =
 
 export type SpeechLang = 'en-IN' | 'hi-IN' | 'en-US';
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+
 export interface TaskItem {
   id: string;
   tabId: string;
@@ -107,6 +110,7 @@ export interface StorageSchema {
 }
 
 const STORAGE_KEY = 'wispr_scratch_app_v2';
+const THEME_KEY = 'wispr_theme';
 
 // Standard predefined tabs
 const DEFAULT_TASK_TABS = [
@@ -162,6 +166,21 @@ function degreesToCardinal(deg: number): string {
 // ============================================================================
 export default function App() {
   // --------------------------------------------------------------------------
+  // THEME STATE & RESOLUTION ENGINE (THEME UPGRADE 1 & 4)
+  // --------------------------------------------------------------------------
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    try {
+      const saved = localStorage.getItem(THEME_KEY) as ThemeMode;
+      if (saved === 'light' || saved === 'dark' || saved === 'system') {
+        return saved;
+      }
+    } catch (e) {
+      console.error('Failed to read theme from localStorage', e);
+    }
+    return 'system';
+  });
+
+  // --------------------------------------------------------------------------
   // STATE: Local Storage & Clean Slate (Section 1)
   // --------------------------------------------------------------------------
   const [tasks, setTasks] = useState<TaskItem[]>(() => {
@@ -174,7 +193,6 @@ export default function App() {
     } catch (e) {
       console.error('Error reading tasks from localStorage', e);
     }
-    // Clean slate: 100% empty on first load. No dummy sample tasks!
     return [];
   });
 
@@ -220,6 +238,59 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('shopping');
   const [isCreatingTab, setIsCreatingTab] = useState(false);
   const [newTabName, setNewTabName] = useState('');
+
+  // Check if pure pitch-black night theme is active (Odour Witness Tab)
+  const isNightTheme = activeTab === 'odour';
+
+  // --------------------------------------------------------------------------
+  // THEME EFFECT (THEME UPGRADE 1 & 4)
+  // - Listens to theme state and window.matchMedia('(prefers-color-scheme: dark)')
+  // - Dynamically adds or removes 'dark' class on document.documentElement (<html>)
+  // - CRITICAL: Odour Witness (2 AM) forces dark mode regardless of theme setting
+  // --------------------------------------------------------------------------
+  useEffect(() => {
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch (e) {
+      console.error('Failed to save theme to localStorage', e);
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const applyThemeClass = () => {
+      // THEME UPGRADE 4: Odour Witness (2 AM) overrides and forces dark mode
+      if (activeTab === 'odour') {
+        document.documentElement.classList.add('dark');
+        return;
+      }
+
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else if (theme === 'light') {
+        document.documentElement.classList.remove('dark');
+      } else {
+        // System preference
+        if (mediaQuery.matches) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      }
+    };
+
+    applyThemeClass();
+
+    const handleMediaChange = () => {
+      if (theme === 'system' && activeTab !== 'odour') {
+        applyThemeClass();
+      }
+    };
+
+    mediaQuery.addEventListener('change', handleMediaChange);
+    return () => {
+      mediaQuery.removeEventListener('change', handleMediaChange);
+    };
+  }, [theme, activeTab]);
 
   // --------------------------------------------------------------------------
   // STATE: Task Voice Input Card (Section 2 & 3)
@@ -283,7 +354,7 @@ export default function App() {
       const rec = new SpeechRecognition();
       rec.continuous = true;
       rec.interimResults = true;
-      // UI Upgrade 2: Hardcoded to 'en-IN' and maxAlternatives = 1
+      // Hardcoded to 'en-IN' and maxAlternatives = 1
       rec.lang = 'en-IN';
       rec.maxAlternatives = 1;
 
@@ -303,7 +374,6 @@ export default function App() {
           const transcript = res[0].transcript;
 
           if (res.isFinal) {
-            // Apply Hinglish autocorrects to the final transcript
             const cleaned = fixHinglishMisrecognitions(transcript);
             setTaskInputText((prev) => {
               const needsSpace = prev.length > 0 && !prev.endsWith(' ') && !prev.endsWith('\n');
@@ -465,7 +535,7 @@ export default function App() {
   const speakerRecRef = useRef<any>(null);
   const listenerRecRef = useRef<any>(null);
 
-  // Toggle Speaker Fallback Mic (Hardcoded en-IN & maxAlternatives=1)
+  // Toggle Speaker Fallback Mic
   const toggleSpeakerMic = () => {
     if (!isSpeechSupported) {
       alert('Speech recognition not supported in this browser.');
@@ -519,7 +589,7 @@ export default function App() {
     }
   };
 
-  // Toggle Listener Fallback Mic (Hardcoded en-IN & maxAlternatives=1)
+  // Toggle Listener Fallback Mic
   const toggleListenerMic = () => {
     if (!isSpeechSupported) {
       alert('Speech recognition not supported in this browser.');
@@ -601,15 +671,12 @@ export default function App() {
     const text = speakerText;
     if (!text) return { numbers: [], negations: [], conditions: [] };
 
-    // 1. Numbers / Times: digits or numbers with units
     const numberMatches = text.match(/\b\d+(?:\.\d+)?(?:\s*(?:am|pm|pills?|rupees?|rs|packets?|kg|gm|l|ml))?\b/gi) || [];
     const uniqueNumbers = Array.from(new Set(numberMatches));
 
-    // 2. Negations: nahi, mat, bina, not, don't, never, without
     const negationMatches = text.match(/\b(nahi|mat|bina|not|don't|dont|never|without|no|neither|nor)\b/gi) || [];
     const uniqueNegations = Array.from(new Set(negationMatches.map((n) => n.toLowerCase())));
 
-    // 3. Conditions: if, only if, unless, before, after, when, provided
     const conditionMatches = text.match(/\b(only if|if|unless|before|after|when|provided|until)\b/gi) || [];
     const uniqueConditions = Array.from(new Set(conditionMatches.map((c) => c.toLowerCase())));
 
@@ -796,7 +863,7 @@ export default function App() {
   const [isOdourListening, setIsOdourListening] = useState(false);
   const odourRecRef = useRef<any>(null);
 
-  // Toggle Odour Fallback Voice Mic (Hardcoded en-IN & maxAlternatives=1)
+  // Toggle Odour Fallback Voice Mic
   const toggleOdourMic = () => {
     if (!isSpeechSupported) {
       alert('Speech recognition not supported.');
@@ -909,9 +976,6 @@ export default function App() {
       const boundaryLayer = hourly.boundary_layer_height?.[bestIdx] ?? 120;
       const cardinal = degreesToCardinal(windDir);
 
-      // Meteorological Assessment Rules:
-      // Upwind Plume: wind_speed >= 1.5 m/s
-      // Nocturnal Inversion Trapping: boundary_layer_height < 150m
       const isUpwindPlume = windSpeed >= 1.5;
       const isInversionTrapping = boundaryLayer < 150;
 
@@ -980,68 +1044,115 @@ This incident log has been scientifically recorded with real-time meteorological
     setOdourLogs((prev) => prev.filter((item) => item.id !== id));
   };
 
-  // Check if pure pitch-black night theme is active (Odour Witness Tab)
-  const isNightTheme = activeTab === 'odour';
-
   // ==========================================================================
-  // RENDER
+  // RENDER (THEME UPGRADE 2 & 4: DYNAMIC LIGHT / DARK / PURE BLACK ODOUR)
   // ==========================================================================
   return (
     <div
       className={`min-h-screen font-sans transition-colors duration-300 ${
         isNightTheme
           ? 'bg-[#000000] text-slate-100 selection:bg-amber-500/30'
-          : 'bg-gradient-to-br from-slate-950 via-gray-900 to-slate-950 text-slate-100 selection:bg-indigo-500/30'
+          : 'bg-slate-50 text-slate-900 dark:bg-gradient-to-br dark:from-slate-950 dark:via-gray-900 dark:to-slate-950 dark:text-slate-100 selection:bg-indigo-500/30'
       }`}
     >
       {/* =====================================================================
-          HEADER & SLEEK SEGMENTED TAB BAR (UI UPGRADE 1)
+          HEADER & SLEEK SEGMENTED TAB BAR
           ===================================================================== */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-slate-950/70 border-b border-slate-800/80 transition-colors">
+      <header
+        className={`sticky top-0 z-40 backdrop-blur-xl border-b transition-colors ${
+          isNightTheme
+            ? 'bg-[#000000]/90 border-slate-900'
+            : 'bg-white/80 dark:bg-slate-950/70 border-slate-200/80 dark:border-slate-800/80'
+        }`}
+      >
         <div className="max-w-6xl mx-auto px-3 sm:px-6 py-3">
-          {/* Top Row: Brand & Wispr Flow Desktop Guide */}
+          {/* Top Row: Brand & Theme Toggle + Wispr Flow Info */}
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2.5">
               <div
                 className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg shadow-lg ${
                   isNightTheme
                     ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 shadow-amber-500/10'
-                    : 'bg-gradient-to-tr from-indigo-600 to-violet-500 text-white shadow-indigo-500/20'
+                    : 'bg-indigo-600 dark:bg-gradient-to-tr dark:from-indigo-600 dark:to-violet-500 text-white shadow-indigo-500/20'
                 }`}
               >
-                {isNightTheme ? <Moon className="w-5 h-5" /> : <Sparkles className="w-5 h-5 text-indigo-200" />}
+                {isNightTheme ? <Moon className="w-5 h-5" /> : <Sparkles className="w-5 h-5 text-indigo-100 dark:text-indigo-200" />}
               </div>
               <div>
-                <h1 className="font-extrabold text-base sm:text-lg tracking-tight leading-none flex items-center gap-2 text-white">
+                <h1 className="font-extrabold text-base sm:text-lg tracking-tight leading-none flex items-center gap-2 text-slate-900 dark:text-white">
                   <span>Wispr Workspace</span>
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/40">
                     Flow v2
                   </span>
                 </h1>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   Voice Workspace · Readback Verifier · 2 AM Odour Witness
                 </p>
               </div>
             </div>
 
-            {/* Desktop Wispr Flow Shortcut Badge & Browser Support */}
-            <div className="flex items-center gap-2">
-              <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-700/60 text-xs text-slate-300 shadow-inner">
-                <Keyboard className="w-3.5 h-3.5 text-indigo-400" />
-                <span className="font-medium text-slate-400">Wispr Flow:</span>
-                <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-600 font-mono text-[11px] text-indigo-300 font-bold shadow-xs">
+            {/* Controls: Wispr Flow Shortcut Badge, Theme Toggle & New Tab */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* Desktop Wispr Flow Shortcut Badge */}
+              <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700/60 text-xs text-slate-700 dark:text-slate-300 shadow-inner">
+                <Keyboard className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span className="font-medium text-slate-500 dark:text-slate-400">Wispr Flow:</span>
+                <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 font-mono text-[11px] text-indigo-700 dark:text-indigo-300 font-bold shadow-xs">
                   Fn
                 </kbd>
-                <span className="text-slate-500">or</span>
-                <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-600 font-mono text-[11px] text-indigo-300 font-bold shadow-xs">
+                <span className="text-slate-400 dark:text-slate-500">/</span>
+                <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 font-mono text-[11px] text-indigo-700 dark:text-indigo-300 font-bold shadow-xs">
                   Ctrl+Win
                 </kbd>
+              </div>
+
+              {/* THEME TOGGLE UI (THEME UPGRADE 3) */}
+              <div
+                className="flex items-center rounded-xl p-1 bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-inner"
+                title="Theme: Light, Dark, or System"
+              >
+                <button
+                  type="button"
+                  onClick={() => setTheme('light')}
+                  className={`p-1.5 rounded-lg text-xs transition-all ${
+                    theme === 'light'
+                      ? 'bg-white dark:bg-indigo-600/30 text-amber-500 dark:text-amber-300 shadow-xs ring-1 ring-slate-200 dark:ring-indigo-500/50 font-bold'
+                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                  }`}
+                  title="Light Theme"
+                >
+                  <Sun className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTheme('dark')}
+                  className={`p-1.5 rounded-lg text-xs transition-all ${
+                    theme === 'dark'
+                      ? 'bg-white dark:bg-indigo-600/40 text-indigo-600 dark:text-indigo-300 shadow-xs ring-1 ring-slate-200 dark:ring-indigo-500/50 font-bold'
+                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                  }`}
+                  title="Dark Theme"
+                >
+                  <Moon className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTheme('system')}
+                  className={`p-1.5 rounded-lg text-xs transition-all ${
+                    theme === 'system'
+                      ? 'bg-white dark:bg-indigo-600/40 text-indigo-600 dark:text-indigo-300 shadow-xs ring-1 ring-slate-200 dark:ring-indigo-500/50 font-bold'
+                      : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                  }`}
+                  title="System Theme"
+                >
+                  <Monitor className="w-3.5 h-3.5" />
+                </button>
               </div>
 
               {/* Mic blocked helper link */}
               <button
                 onClick={() => window.open(window.location.href, '_blank')}
-                className="px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors flex items-center gap-1.5"
+                className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors flex items-center gap-1.5 shadow-xs"
                 title="Open in new browser tab if microphone is blocked in iframe"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -1051,14 +1162,20 @@ This incident log has been scientifically recorded with real-time meteorological
           </div>
 
           {/* Top Navigation Tab Bar: Sleek Segmented Control */}
-          <div className="bg-slate-900/60 backdrop-blur-lg border border-slate-800/80 p-1.5 rounded-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar shadow-inner">
+          <div
+            className={`p-1.5 rounded-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar shadow-inner border transition-colors ${
+              isNightTheme
+                ? 'bg-[#050505] border-slate-900'
+                : 'bg-slate-200/60 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800/80 backdrop-blur-lg'
+            }`}
+          >
             {/* 1. Shopping */}
             <button
               onClick={() => setActiveTab('shopping')}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'shopping'
-                  ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
+                  ? 'bg-white dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-200 border border-slate-200 dark:border-indigo-500/50 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/60 dark:hover:bg-slate-800/50 border border-transparent'
               }`}
             >
               <span>Shopping</span>
@@ -1066,8 +1183,8 @@ This incident log has been scientifically recorded with real-time meteorological
                 <span
                   className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
                     activeTab === 'shopping'
-                      ? 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/30'
-                      : 'bg-slate-800 text-slate-400'
+                      ? 'bg-indigo-100 dark:bg-indigo-500/30 text-indigo-700 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-400/30'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                   }`}
                 >
                   {tasks.filter((t) => t.tabId === 'shopping').length}
@@ -1080,8 +1197,8 @@ This incident log has been scientifically recorded with real-time meteorological
               onClick={() => setActiveTab('can_wait')}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'can_wait'
-                  ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
+                  ? 'bg-white dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-200 border border-slate-200 dark:border-indigo-500/50 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/60 dark:hover:bg-slate-800/50 border border-transparent'
               }`}
             >
               <span>Can Wait / Later</span>
@@ -1089,8 +1206,8 @@ This incident log has been scientifically recorded with real-time meteorological
                 <span
                   className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
                     activeTab === 'can_wait'
-                      ? 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/30'
-                      : 'bg-slate-800 text-slate-400'
+                      ? 'bg-indigo-100 dark:bg-indigo-500/30 text-indigo-700 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-400/30'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                   }`}
                 >
                   {tasks.filter((t) => t.tabId === 'can_wait').length}
@@ -1103,8 +1220,8 @@ This incident log has been scientifically recorded with real-time meteorological
               onClick={() => setActiveTab('do_now')}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'do_now'
-                  ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
+                  ? 'bg-white dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-200 border border-slate-200 dark:border-indigo-500/50 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/60 dark:hover:bg-slate-800/50 border border-transparent'
               }`}
             >
               <span>Do Now / Urgent</span>
@@ -1112,8 +1229,8 @@ This incident log has been scientifically recorded with real-time meteorological
                 <span
                   className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
                     activeTab === 'do_now'
-                      ? 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/30'
-                      : 'bg-slate-800 text-slate-400'
+                      ? 'bg-indigo-100 dark:bg-indigo-500/30 text-indigo-700 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-400/30'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                   }`}
                 >
                   {tasks.filter((t) => t.tabId === 'do_now').length}
@@ -1126,8 +1243,8 @@ This incident log has been scientifically recorded with real-time meteorological
               onClick={() => setActiveTab('quick_notes')}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'quick_notes'
-                  ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
+                  ? 'bg-white dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-200 border border-slate-200 dark:border-indigo-500/50 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/60 dark:hover:bg-slate-800/50 border border-transparent'
               }`}
             >
               <span>Quick Notes</span>
@@ -1135,8 +1252,8 @@ This incident log has been scientifically recorded with real-time meteorological
                 <span
                   className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
                     activeTab === 'quick_notes'
-                      ? 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/30'
-                      : 'bg-slate-800 text-slate-400'
+                      ? 'bg-indigo-100 dark:bg-indigo-500/30 text-indigo-700 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-400/30'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                   }`}
                 >
                   {tasks.filter((t) => t.tabId === 'quick_notes').length}
@@ -1150,8 +1267,8 @@ This incident log has been scientifically recorded with real-time meteorological
                 key={ct.id}
                 className={`group flex items-center rounded-xl pl-3 pr-1.5 py-1 text-xs sm:text-sm whitespace-nowrap transition-all duration-200 ${
                   activeTab === ct.id
-                    ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
+                    ? 'bg-white dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-200 border border-slate-200 dark:border-indigo-500/50 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/60 dark:hover:bg-slate-800/50 border border-transparent'
                 }`}
               >
                 <button
@@ -1163,8 +1280,8 @@ This incident log has been scientifically recorded with real-time meteorological
                     <span
                       className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
                         activeTab === ct.id
-                          ? 'bg-indigo-500/30 text-indigo-200'
-                          : 'bg-slate-800 text-slate-400'
+                          ? 'bg-indigo-100 dark:bg-indigo-500/30 text-indigo-700 dark:text-indigo-200'
+                          : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                       }`}
                     >
                       {tasks.filter((t) => t.tabId === ct.id).length}
@@ -1174,7 +1291,7 @@ This incident log has been scientifically recorded with real-time meteorological
                 <button
                   onClick={(e) => handleDeleteCustomTab(ct.id, e)}
                   title={`Delete ${ct.name} tab`}
-                  className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  className="p-1 rounded-lg text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1183,7 +1300,7 @@ This incident log has been scientifically recorded with real-time meteorological
 
             {/* 5. + New Tab Button */}
             {isCreatingTab ? (
-              <div className="flex items-center gap-1.5 bg-slate-900 border border-indigo-500/50 rounded-xl px-2 py-1 shadow-lg">
+              <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-indigo-400 dark:border-indigo-500/50 rounded-xl px-2 py-1 shadow-sm dark:shadow-lg">
                 <input
                   type="text"
                   value={newTabName}
@@ -1193,18 +1310,18 @@ This incident log has been scientifically recorded with real-time meteorological
                     if (e.key === 'Escape') setIsCreatingTab(false);
                   }}
                   autoFocus
-                  placeholder="Tab name (e.g. Work)"
-                  className="px-2 py-1 text-xs bg-transparent border-none focus:outline-none text-slate-100 placeholder:text-slate-500 w-28"
+                  placeholder="Tab name"
+                  className="px-2 py-1 text-xs bg-transparent border-none focus:outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 w-24 sm:w-28"
                 />
                 <button
                   onClick={handleCreateCustomTab}
-                  className="px-2 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 shadow-sm"
+                  className="px-2 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 dark:hover:bg-indigo-500 shadow-xs"
                 >
                   Save
                 </button>
                 <button
                   onClick={() => setIsCreatingTab(false)}
-                  className="p-1 text-slate-400 hover:text-slate-200"
+                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1212,38 +1329,38 @@ This incident log has been scientifically recorded with real-time meteorological
             ) : (
               <button
                 onClick={() => setIsCreatingTab(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-medium border border-dashed border-slate-700/80 text-slate-400 hover:text-indigo-300 hover:border-indigo-500/50 hover:bg-slate-800/40 transition-all whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-medium border border-dashed border-slate-300 dark:border-slate-700/80 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:border-indigo-400 dark:hover:border-indigo-500/50 hover:bg-white/60 dark:hover:bg-slate-800/40 transition-all whitespace-nowrap"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>New Tab</span>
               </button>
             )}
 
-            <div className="h-5 w-[1px] bg-slate-800 mx-1 flex-shrink-0" />
+            <div className="h-5 w-[1px] bg-slate-300 dark:bg-slate-800 mx-1 flex-shrink-0" />
 
             {/* 6. Readback Verifier */}
             <button
               onClick={() => setActiveTab('verifier')}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'verifier'
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.25)] font-semibold'
-                  : 'text-emerald-400/70 hover:text-emerald-300 hover:bg-emerald-950/30 border border-transparent'
+                  ? 'bg-white dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/50 shadow-sm dark:shadow-[0_0_15px_rgba(16,185,129,0.25)] font-semibold'
+                  : 'text-emerald-700 dark:text-emerald-400/80 hover:text-emerald-900 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 border border-transparent'
               }`}
             >
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               <span>Readback Verifier</span>
             </button>
 
-            {/* 7. Odour Witness (2 AM) */}
+            {/* 7. Odour Witness (2 AM) - CRITICAL OVERRIDE */}
             <button
               onClick={() => setActiveTab('odour')}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'odour'
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.25)] font-semibold ring-1 ring-amber-500/30'
-                  : 'text-amber-400/80 hover:text-amber-300 hover:bg-amber-950/30 border border-transparent'
+                  ? 'bg-amber-400 text-black border border-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.35)] font-bold ring-1 ring-amber-400/40'
+                  : 'text-amber-700 dark:text-amber-400/80 hover:text-amber-900 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30 border border-transparent'
               }`}
             >
-              <Moon className="w-4 h-4 text-amber-400 animate-pulse" />
+              <Moon className="w-4 h-4 text-amber-500 dark:text-amber-400 animate-pulse" />
               <span>Odour Witness (2 AM)</span>
             </button>
           </div>
@@ -1251,7 +1368,7 @@ This incident log has been scientifically recorded with real-time meteorological
       </header>
 
       {/* =====================================================================
-          MAIN CONTENT AREA (DARK GLASSMORPHISM)
+          MAIN CONTENT AREA (RESPONSIVE LIGHT / DARK PALETTE - THEME UPGRADE 2)
           ===================================================================== */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* ===================================================================
@@ -1261,60 +1378,60 @@ This incident log has been scientifically recorded with real-time meteorological
           <div className="space-y-6">
             {/* Helper alert if mic blocked */}
             {micBlockedHelp && (
-              <div className="p-4 rounded-2xl border border-amber-500/40 bg-amber-950/30 backdrop-blur-md text-amber-200 text-sm flex items-start gap-3 shadow-lg">
-                <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-400 mt-0.5" />
+              <div className="p-4 rounded-2xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-950/30 backdrop-blur-md text-amber-900 dark:text-amber-200 text-sm flex items-start gap-3 shadow-md">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
                 <div className="flex-1">
-                  <p className="font-semibold text-amber-300">Microphone Access Restricted</p>
-                  <p className="mt-0.5 text-xs text-amber-200/80">
+                  <p className="font-semibold text-amber-800 dark:text-amber-300">Microphone Access Restricted</p>
+                  <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-200/80">
                     Browser security blocks mic access in embedded frames. Wispr Flow desktop app still works universally using your global hotkey (Fn or Ctrl+Win). Alternatively, open this app in a standalone tab.
                   </p>
                   <button
                     onClick={() => window.open(window.location.href, '_blank')}
-                    className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition-all"
+                    className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 text-white dark:text-amber-300 border border-amber-600 dark:border-amber-500/40 rounded-xl text-xs font-bold transition-all shadow-xs"
                   >
                     <ExternalLink className="w-3.5 h-3.5" /> Open in New Browser Tab
                   </button>
                 </div>
                 <button
                   onClick={() => setMicBlockedHelp(false)}
-                  className="text-amber-400 hover:text-white"
+                  className="text-amber-600 dark:text-amber-400 hover:text-amber-900 dark:hover:text-white"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             )}
 
-            {/* Voice Input Card: Frosted Glass & Wispr Flow Optimized (UI UPGRADE 1 & 2) */}
-            <div className="bg-slate-800/50 backdrop-blur-md border border-slate-700/50 shadow-xl rounded-2xl p-5 sm:p-6 transition-all">
+            {/* Voice Input Card: Responsive Frosted Glass (THEME UPGRADE 2) */}
+            <div className="bg-white/70 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/50 shadow-xl rounded-2xl p-5 sm:p-6 transition-all text-slate-900 dark:text-slate-100">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                  <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
                     <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 block">
                       Wispr Flow Voice Dictation
                     </span>
-                    <span className="text-[11px] text-slate-400 font-normal">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-normal">
                       Focus input and hold your global desktop hotkey
                     </span>
                   </div>
                 </div>
 
                 {/* Desktop Hotkey Pills */}
-                <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                  <span className="text-[11px] text-slate-400 hidden sm:inline">Hotkey:</span>
-                  <span className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-[11px] text-indigo-300 font-semibold shadow-xs">
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  <span className="text-[11px] hidden sm:inline">Hotkey:</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-indigo-700 dark:text-indigo-300 font-semibold shadow-xs">
                     Fn
                   </span>
-                  <span className="text-slate-500">/</span>
-                  <span className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-[11px] text-indigo-300 font-semibold shadow-xs">
+                  <span className="text-slate-400 dark:text-slate-500">/</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-indigo-700 dark:text-indigo-300 font-semibold shadow-xs">
                     Ctrl+Win
                   </span>
                 </div>
               </div>
 
-              {/* Textarea: Premium Dark Glass & Wispr Flow Placeholder (UI UPGRADE 2) */}
+              {/* Textarea: Responsive Input Styling (THEME UPGRADE 2) */}
               <div className="relative">
                 <textarea
                   value={taskInputText}
@@ -1327,15 +1444,15 @@ This incident log has been scientifically recorded with real-time meteorological
                   }}
                   rows={3}
                   placeholder="Hold your Wispr Flow hotkey (Fn or Ctrl+Win) to speak..."
-                  className="w-full bg-slate-900/50 border border-slate-700/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl p-4 text-lg text-slate-100 placeholder:text-slate-500 transition-all min-h-[110px] resize-y"
+                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl p-4 text-base sm:text-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-all min-h-[110px] resize-y shadow-xs"
                 />
               </div>
 
-              {/* CRITICAL ANTI-STUTTER: Subtle Interim Preview Badge */}
+              {/* Interim Preview Badge */}
               {taskInterimPreview && (
-                <div className="mt-2 px-3 py-1.5 rounded-xl bg-sky-950/40 border border-sky-500/30 text-sky-300 text-xs flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse flex-shrink-0" />
-                  <span className="font-semibold text-sky-400 flex-shrink-0">Live Interim:</span>
+                <div className="mt-2 px-3 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-500/30 text-sky-800 dark:text-sky-300 text-xs flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-sky-500 dark:bg-sky-400 animate-pulse flex-shrink-0" />
+                  <span className="font-semibold text-sky-600 dark:text-sky-400 flex-shrink-0">Live Interim:</span>
                   <span className="italic truncate">{taskInterimPreview}</span>
                 </div>
               )}
@@ -1344,48 +1461,48 @@ This incident log has been scientifically recorded with real-time meteorological
               <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3">
                 {/* 1-Tap Quick Phrase Bar */}
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs text-slate-400 font-medium mr-1">Quick Add:</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-medium mr-1">Quick Add:</span>
                   {QUICK_PHRASES.map((phrase) => (
                     <button
                       key={phrase}
                       type="button"
                       onClick={() => handleInsertQuickPhrase(phrase)}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-900/60 text-slate-300 hover:text-indigo-200 hover:bg-indigo-950/40 border border-slate-700/60 hover:border-indigo-500/40 transition-all"
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:text-indigo-700 dark:hover:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-slate-200 dark:border-slate-700/60 hover:border-indigo-300 dark:hover:border-indigo-500/40 transition-all"
                     >
                       {phrase}
                     </button>
                   ))}
                 </div>
 
-                {/* Subtle Fallback Browser Mic Button (UI UPGRADE 2) */}
+                {/* Subtle Fallback Browser Mic Button */}
                 <button
                   type="button"
                   onClick={toggleTaskMic}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
                     isTaskListening
-                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-[0_0_12px_rgba(244,63,94,0.3)] animate-pulse'
-                      : 'bg-slate-900/50 text-slate-400 border-slate-700/60 hover:text-slate-200 hover:bg-slate-800/80 hover:border-slate-600'
+                      ? 'bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-500/50 shadow-xs dark:shadow-[0_0_12px_rgba(244,63,94,0.3)] animate-pulse'
+                      : 'bg-slate-100 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/80 dark:hover:bg-slate-800/80 hover:border-slate-300 dark:hover:border-slate-600'
                   }`}
                   title="Use Web Speech API browser mic as fallback (Hardcoded en-IN)"
                 >
                   {isTaskListening ? (
                     <>
-                      <MicOff className="w-3.5 h-3.5 text-rose-400" />
+                      <MicOff className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
                       <span>Listening (en-IN)...</span>
                     </>
                   ) : (
                     <>
-                      <Mic className="w-3.5 h-3.5 text-slate-400" />
+                      <Mic className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                       <span>Fallback Browser Mic</span>
                     </>
                   )}
                 </button>
               </div>
 
-              {/* Save to Tab Pill Buttons (Section 2) */}
-              <div className="mt-4 pt-4 border-t border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
+              {/* Save to Tab Pill Buttons */}
+              <div className="mt-4 pt-4 border-t border-slate-200/80 dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs font-bold text-slate-400 mr-1.5">Save to Tab:</span>
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400 mr-1.5">Save to Tab:</span>
                   {allTaskTabs.map((tab) => (
                     <button
                       key={tab.id}
@@ -1393,8 +1510,8 @@ This incident log has been scientifically recorded with real-time meteorological
                       onClick={() => setTargetSaveTab(tab.id)}
                       className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                         targetSaveTab === tab.id
-                          ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/50 shadow-[0_0_10px_rgba(99,102,241,0.2)]'
-                          : 'bg-slate-900/50 text-slate-400 hover:text-slate-200 border border-slate-700/50 hover:bg-slate-800/50'
+                          ? 'bg-indigo-600 dark:bg-indigo-500/20 text-white dark:text-indigo-300 border border-indigo-600 dark:border-indigo-500/50 shadow-sm dark:shadow-[0_0_10px_rgba(99,102,241,0.2)]'
+                          : 'bg-slate-100 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700/50 hover:bg-slate-200/70 dark:hover:bg-slate-800/50'
                       }`}
                     >
                       {tab.name}
@@ -1406,7 +1523,7 @@ This incident log has been scientifically recorded with real-time meteorological
                   type="button"
                   onClick={handleSaveTask}
                   disabled={!taskInputText.trim()}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-md dark:shadow-lg dark:shadow-indigo-500/20 transition-all active:scale-95"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Save Note</span>
@@ -1417,50 +1534,50 @@ This incident log has been scientifically recorded with real-time meteorological
             {/* Task List Header */}
             <div className="flex items-center justify-between pt-1">
               <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <span>{allTaskTabs.find((t) => t.id === activeTab)?.name || 'Tasks'}</span>
-                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/60">
+                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700/60">
                     {currentTabTasks.length} {currentTabTasks.length === 1 ? 'item' : 'items'}
                   </span>
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   {allTaskTabs.find((t) => t.id === activeTab)?.desc || 'Manage items in this list'}
                 </p>
               </div>
 
               {completedCount > 0 && (
-                <span className="text-xs text-emerald-400 font-semibold bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-500/30">
+                <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-500/30">
                   {completedCount} completed
                 </span>
               )}
             </div>
 
-            {/* Task List: Empty States (UI UPGRADE 3) */}
+            {/* Task List: Empty States */}
             {currentTabTasks.length === 0 ? (
-              <div className="bg-slate-800/30 backdrop-blur-md border border-slate-700/40 rounded-2xl p-12 text-center flex flex-col items-center justify-center space-y-3 shadow-xl">
+              <div className="bg-white/60 dark:bg-slate-800/30 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/40 rounded-2xl p-12 text-center flex flex-col items-center justify-center space-y-3 shadow-sm dark:shadow-xl">
                 <div className="relative flex items-center justify-center">
                   <div className="absolute inset-0 bg-indigo-500/10 blur-xl rounded-full" />
-                  <Inbox className="w-16 h-16 text-indigo-400 opacity-20 relative z-10" />
+                  <Inbox className="w-16 h-16 text-indigo-500 dark:text-indigo-400 opacity-20 relative z-10" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-base font-semibold text-slate-200">
+                  <h3 className="text-base font-semibold text-slate-800 dark:text-slate-200">
                     All clear! Hold your Wispr Flow hotkey to add a new task to {allTaskTabs.find((t) => t.id === activeTab)?.name || 'this tab'}.
                   </h3>
-                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    Press <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-indigo-300 text-[11px]">Fn</span> or <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-indigo-300 text-[11px]">Ctrl+Win</span> anywhere, speak naturally, and Wispr Flow will dictate right in.
+                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                    Press <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-indigo-600 dark:text-indigo-300 text-[11px]">Fn</span> or <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-indigo-600 dark:text-indigo-300 text-[11px]">Ctrl+Win</span> anywhere, speak naturally, and Wispr Flow will dictate right in.
                   </p>
                 </div>
               </div>
             ) : (
-              /* Frosted Glass Task Cards (UI UPGRADE 1) */
+              /* Frosted Glass Task Cards */
               <div className="space-y-2.5">
                 {currentTabTasks.map((task) => (
                   <div
                     key={task.id}
-                    className={`bg-slate-800/50 backdrop-blur-md border border-slate-700/50 shadow-xl rounded-2xl p-3.5 sm:p-4 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                    className={`bg-white/70 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/50 shadow-sm hover:shadow-md dark:shadow-xl rounded-2xl p-3.5 sm:p-4 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                       task.completed
-                        ? 'bg-slate-900/40 border-slate-800/60 opacity-60'
-                        : 'hover:border-slate-600/70 hover:shadow-2xl'
+                        ? 'bg-slate-100/60 dark:bg-slate-900/40 border-slate-200/60 dark:border-slate-800/60 opacity-60'
+                        : 'hover:border-slate-300 dark:hover:border-slate-600/70 hover:shadow-lg dark:hover:shadow-2xl'
                     }`}
                   >
                     {/* Left: Checkbox & Editable Text */}
@@ -1470,15 +1587,15 @@ This incident log has been scientifically recorded with real-time meteorological
                         onClick={() => handleToggleTask(task.id)}
                         className={`mt-0.5 sm:mt-0 p-1 rounded-lg transition-colors flex-shrink-0 ${
                           task.completed
-                            ? 'text-emerald-400 hover:text-emerald-300'
-                            : 'text-slate-500 hover:text-slate-300'
+                            ? 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700'
+                            : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
                         }`}
                         title={task.completed ? 'Mark Incomplete' : 'Mark Complete'}
                       >
                         {task.completed ? (
-                          <CheckSquare className="w-5 h-5 text-emerald-400" />
+                          <CheckSquare className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                         ) : (
-                          <Square className="w-5 h-5 text-slate-500" />
+                          <Square className="w-5 h-5 text-slate-400 dark:text-slate-500" />
                         )}
                       </button>
 
@@ -1493,19 +1610,19 @@ This incident log has been scientifically recorded with real-time meteorological
                               if (e.key === 'Escape') setEditingTaskId(null);
                             }}
                             autoFocus
-                            className="flex-1 px-3 py-1.5 rounded-xl bg-slate-900 border border-indigo-500 text-sm text-white focus:outline-none"
+                            className="flex-1 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-indigo-500 text-sm text-slate-900 dark:text-white focus:outline-none"
                           />
                           <button
                             type="button"
                             onClick={() => handleSaveEdit(task.id)}
-                            className="p-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 shadow-sm"
+                            className="p-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 dark:hover:bg-indigo-500 shadow-xs"
                           >
                             <Save className="w-4 h-4" />
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditingTaskId(null)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                           >
                             <X className="w-4 h-4" />
                           </button>
@@ -1519,14 +1636,14 @@ This incident log has been scientifically recorded with real-time meteorological
                             }}
                             className={`text-sm cursor-pointer break-words ${
                               task.completed
-                                ? 'line-through text-slate-500'
-                                : 'text-slate-100 font-medium'
+                                ? 'line-through text-slate-400 dark:text-slate-500'
+                                : 'text-slate-900 dark:text-slate-100 font-medium'
                             }`}
                             title="Click to edit task"
                           >
                             {task.text}
                           </p>
-                          <span className="text-[10px] text-slate-500">
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500">
                             {new Date(task.createdAt).toLocaleTimeString([], {
                               hour: '2-digit',
                               minute: '2-digit',
@@ -1537,20 +1654,20 @@ This incident log has been scientifically recorded with real-time meteorological
                     </div>
 
                     {/* Right: Move to Another Tab Dropdown & Actions */}
-                    <div className="flex items-center justify-between sm:justify-end gap-2 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-700/40 flex-shrink-0">
+                    <div className="flex items-center justify-between sm:justify-end gap-2 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-200 dark:border-slate-700/40 flex-shrink-0">
                       <div className="flex items-center gap-1.5">
-                        <MoveRight className="w-3.5 h-3.5 text-slate-500 hidden sm:block" />
+                        <MoveRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 hidden sm:block" />
                         <select
                           value={task.tabId}
                           onChange={(e) => handleMoveTask(task.id, e.target.value)}
-                          className="text-xs bg-slate-900/80 border border-slate-700 text-slate-300 rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                          className="text-xs bg-slate-100 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                           title="Move to another tab"
                         >
                           <option disabled value="">
                             Move to...
                           </option>
                           {allTaskTabs.map((tab) => (
-                            <option key={tab.id} value={tab.id} className="bg-slate-900 text-slate-200">
+                            <option key={tab.id} value={tab.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-200">
                               {tab.name}
                             </option>
                           ))}
@@ -1563,7 +1680,7 @@ This incident log has been scientifically recorded with real-time meteorological
                           setEditingTaskId(task.id);
                           setEditingText(task.text);
                         }}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
                         title="Edit text"
                       >
                         <Edit3 className="w-4 h-4" />
@@ -1572,7 +1689,7 @@ This incident log has been scientifically recorded with real-time meteorological
                       <button
                         type="button"
                         onClick={() => handleDeleteTask(task.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
                         title="Delete task"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1585,30 +1702,30 @@ This incident log has been scientifically recorded with real-time meteorological
 
             {/* Bottom Actions: Clear Completed and Clear All in Tab */}
             {currentTabTasks.length > 0 && (
-              <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={handleClearCompleted}
                   disabled={completedCount === 0}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 bg-slate-800/40 hover:bg-slate-800 hover:text-slate-200 border border-slate-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/40 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 border border-slate-200 dark:border-slate-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                 >
                   Clear Completed ({completedCount})
                 </button>
 
                 {showClearConfirm ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-rose-400 font-bold">Clear all tasks in tab?</span>
+                    <span className="text-xs text-rose-600 dark:text-rose-400 font-bold">Clear all tasks in tab?</span>
                     <button
                       type="button"
                       onClick={handleClearAllInTab}
-                      className="px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-500 shadow-sm"
+                      className="px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 dark:hover:bg-rose-500 shadow-xs"
                     >
                       Yes, Clear All
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowClearConfirm(false)}
-                      className="px-2.5 py-1.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold"
                     >
                       Cancel
                     </button>
@@ -1617,7 +1734,7 @@ This incident log has been scientifically recorded with real-time meteorological
                   <button
                     type="button"
                     onClick={() => setShowClearConfirm(true)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-all"
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 border border-rose-200 dark:border-rose-500/30 transition-all"
                   >
                     Clear All in Tab
                   </button>
@@ -1628,34 +1745,34 @@ This incident log has been scientifically recorded with real-time meteorological
         )}
 
         {/* ===================================================================
-            VIEW 2: READBACK VERIFIER (TAB 6 - UI UPGRADE 4)
+            VIEW 2: READBACK VERIFIER (TAB 6)
             =================================================================== */}
         {activeTab === 'verifier' && (
           <div className="space-y-6">
             {/* Header info */}
-            <div className="bg-slate-800/50 backdrop-blur-md border border-emerald-500/30 shadow-xl rounded-2xl p-5">
-              <div className="flex items-center gap-2.5 text-emerald-400 font-bold text-base">
-                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+            <div className="bg-emerald-50/80 dark:bg-slate-800/50 backdrop-blur-md border border-emerald-200 dark:border-emerald-500/30 shadow-md dark:shadow-xl rounded-2xl p-5 text-slate-900 dark:text-slate-100">
+              <div className="flex items-center gap-2.5 text-emerald-800 dark:text-emerald-400 font-bold text-base">
+                <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                 <span>Spoken Handoff Verifier</span>
               </div>
-              <p className="mt-1 text-xs text-slate-300 leading-relaxed">
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                 Prevents misheard critical constraints (quantities, negations like "nahi/mat/bina", and conditions like "before/after") during verbal handoffs between two people.
               </p>
 
               {/* Sample Scenarios for 1-Click Testing */}
-              <div className="mt-3.5 pt-3.5 border-t border-slate-700/60 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-slate-400">Quick Test Scenarios:</span>
+              <div className="mt-3.5 pt-3.5 border-t border-emerald-200/80 dark:border-slate-700/60 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Quick Test Scenarios:</span>
                 <button
                   type="button"
                   onClick={loadScenario1}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-all shadow-xs"
+                  className="px-3 py-1.5 rounded-xl bg-white dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30 text-xs font-semibold transition-all shadow-xs"
                 >
                   Scenario 1: Pharmacy 15 vs 50 / Hinglish Negation
                 </button>
                 <button
                   type="button"
                   onClick={loadScenario2}
-                  className="px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition-all shadow-xs"
+                  className="px-3 py-1.5 rounded-xl bg-white dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 text-xs font-semibold transition-all shadow-xs"
                 >
                   Scenario 2: Cash Delivery / Time Condition
                 </button>
@@ -1664,20 +1781,20 @@ This incident log has been scientifically recorded with real-time meteorological
 
             {/* Box 1: Speaker Instruction */}
             <div
-              className={`bg-slate-800/50 backdrop-blur-md border border-slate-700/50 shadow-xl rounded-2xl p-5 sm:p-6 transition-all ${
+              className={`bg-white/70 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/50 shadow-md dark:shadow-xl rounded-2xl p-5 sm:p-6 transition-all ${
                 isPassPhoneLocked ? 'relative overflow-hidden' : ''
               }`}
             >
               <div className="flex items-center justify-between mb-2.5">
-                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center justify-center font-bold text-xs">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center font-bold text-xs">
                     1
                   </span>
                   <span>Speaker Instruction (Person 1)</span>
                 </span>
                 {isSpeakerListening && (
-                  <span className="text-xs text-rose-400 font-semibold animate-pulse flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                  <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold animate-pulse flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-600 dark:bg-rose-500 animate-ping" />
                     Listening (en-IN)...
                   </span>
                 )}
@@ -1685,16 +1802,16 @@ This incident log has been scientifically recorded with real-time meteorological
 
               {/* Pass Phone Mode Blur Overlay */}
               {isPassPhoneLocked ? (
-                <div className="my-2 p-8 rounded-xl bg-slate-950/80 backdrop-blur-lg text-white text-center flex flex-col items-center justify-center gap-2.5 border border-slate-700 shadow-inner">
+                <div className="my-2 p-8 rounded-xl bg-slate-900/90 dark:bg-slate-950/80 backdrop-blur-lg text-white text-center flex flex-col items-center justify-center gap-2.5 border border-slate-700 shadow-inner">
                   <Lock className="w-8 h-8 text-amber-400 animate-bounce" />
                   <p className="font-bold text-sm text-slate-100">Speaker Instruction Locked & Hidden</p>
-                  <p className="text-xs text-slate-400 max-w-sm">
+                  <p className="text-xs text-slate-300 dark:text-slate-400 max-w-sm">
                     Pass the phone to Person 2. They will speak what they understood in Box 2 without peeking at this instruction.
                   </p>
                   <button
                     type="button"
                     onClick={() => setIsPassPhoneLocked(false)}
-                    className="mt-2 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-600 flex items-center gap-1.5 transition-all"
+                    className="mt-2 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-600 flex items-center gap-1.5 transition-all"
                   >
                     <Unlock className="w-3.5 h-3.5" /> Peek / Unlock
                   </button>
@@ -1706,48 +1823,46 @@ This incident log has been scientifically recorded with real-time meteorological
                     onChange={(e) => setSpeakerText(e.target.value)}
                     rows={3}
                     placeholder="Hold your Wispr Flow hotkey (Fn or Ctrl+Win) to speak speaker instruction..."
-                    className="w-full rounded-xl bg-slate-900/50 border border-slate-700/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 p-4 text-base text-slate-100 placeholder:text-slate-500 min-h-[100px] transition-all"
+                    className="w-full rounded-xl bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 p-4 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 min-h-[100px] transition-all shadow-xs"
                   />
                 </div>
               )}
 
               {speakerInterim && (
-                <div className="mt-2 text-xs text-sky-400 italic">
+                <div className="mt-2 text-xs text-sky-700 dark:text-sky-400 italic">
                   Live interim: {speakerInterim}
                 </div>
               )}
 
-              {/* Confirmation Chips: Vibrant Glowing Tags (UI UPGRADE 4) */}
+              {/* Confirmation Chips: Vibrant Glowing Tags */}
               {!isPassPhoneLocked && speakerText.trim() && (
-                <div className="mt-4 pt-3.5 border-t border-slate-700/50 space-y-2.5">
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                <div className="mt-4 pt-3.5 border-t border-slate-200 dark:border-slate-700/50 space-y-2.5">
+                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                     Extracted Confirmation Chips:
                   </div>
 
                   {/* Numbers Chips (Glowing Blue) */}
                   {speakerConstraints.numbers.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-blue-400 font-semibold">Numbers:</span>
+                      <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold">Numbers:</span>
                       {speakerConstraints.numbers.map((num) => (
                         <div
                           key={num}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-[0_0_12px_rgba(59,130,246,0.2)] text-xs font-semibold"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-50 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-500/40 shadow-xs dark:shadow-[0_0_12px_rgba(59,130,246,0.2)] text-xs font-semibold"
                         >
                           <span>{num}</span>
-                          {/* Swap 15 <-> 50 button */}
                           <button
                             type="button"
                             onClick={() => handleTeenTyFlip(num)}
-                            className="px-1.5 py-0.5 rounded-lg bg-blue-500/30 hover:bg-blue-500/50 text-blue-200 text-[10px] font-bold transition-colors"
+                            className="px-1.5 py-0.5 rounded-lg bg-blue-200 dark:bg-blue-500/30 hover:bg-blue-300 dark:hover:bg-blue-500/50 text-blue-800 dark:text-blue-200 text-[10px] font-bold transition-colors"
                             title="Flip Teen to -Ty (e.g. 15 <-> 50)"
                           >
                             Swap Teen/Ty
                           </button>
-                          {/* +/- buttons */}
                           <button
                             type="button"
                             onClick={() => handleAdjustNumber(num, 1)}
-                            className="w-4 h-4 rounded-md bg-blue-500/30 hover:bg-blue-500/50 flex items-center justify-center text-blue-200 text-[10px] font-bold"
+                            className="w-4 h-4 rounded-md bg-blue-200 dark:bg-blue-500/30 hover:bg-blue-300 dark:hover:bg-blue-500/50 flex items-center justify-center text-blue-800 dark:text-blue-200 text-[10px] font-bold"
                             title="Increment +1"
                           >
                             +
@@ -1755,7 +1870,7 @@ This incident log has been scientifically recorded with real-time meteorological
                           <button
                             type="button"
                             onClick={() => handleAdjustNumber(num, -1)}
-                            className="w-4 h-4 rounded-md bg-blue-500/30 hover:bg-blue-500/50 flex items-center justify-center text-blue-200 text-[10px] font-bold"
+                            className="w-4 h-4 rounded-md bg-blue-200 dark:bg-blue-500/30 hover:bg-blue-300 dark:hover:bg-blue-500/50 flex items-center justify-center text-blue-800 dark:text-blue-200 text-[10px] font-bold"
                             title="Decrement -1"
                           >
                             -
@@ -1768,11 +1883,11 @@ This incident log has been scientifically recorded with real-time meteorological
                   {/* Negations Chips (Glowing Red) */}
                   {speakerConstraints.negations.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-red-400 font-semibold">Negations:</span>
+                      <span className="text-xs text-rose-600 dark:text-red-400 font-semibold">Negations:</span>
                       {speakerConstraints.negations.map((neg) => (
                         <span
                           key={neg}
-                          className="px-3 py-1 rounded-xl bg-red-500/20 text-red-300 border border-red-500/40 shadow-[0_0_12px_rgba(239,68,68,0.2)] text-xs font-semibold"
+                          className="px-3 py-1 rounded-xl bg-rose-50 dark:bg-red-500/20 text-rose-700 dark:text-red-300 border border-rose-200 dark:border-red-500/40 shadow-xs dark:shadow-[0_0_12px_rgba(239,68,68,0.2)] text-xs font-semibold"
                         >
                           🚫 {neg}
                         </span>
@@ -1783,11 +1898,11 @@ This incident log has been scientifically recorded with real-time meteorological
                   {/* Conditions Chips (Glowing Amber) */}
                   {speakerConstraints.conditions.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-amber-400 font-semibold">Conditions:</span>
+                      <span className="text-xs text-amber-700 dark:text-amber-400 font-semibold">Conditions:</span>
                       {speakerConstraints.conditions.map((cond) => (
                         <span
                           key={cond}
-                          className="px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.2)] text-xs font-semibold"
+                          className="px-3 py-1 rounded-xl bg-amber-50 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-500/40 shadow-xs dark:shadow-[0_0_12px_rgba(245,158,11,0.2)] text-xs font-semibold"
                         >
                           ⚡ {cond}
                         </span>
@@ -1798,14 +1913,14 @@ This incident log has been scientifically recorded with real-time meteorological
               )}
 
               {/* Action Buttons for Box 1 */}
-              <div className="mt-4 pt-3.5 border-t border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
+              <div className="mt-4 pt-3.5 border-t border-slate-200 dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={() => setIsPassPhoneLocked(!isPassPhoneLocked)}
                   className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
                     isPassPhoneLocked
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
-                      : 'bg-slate-900/60 hover:bg-slate-900 text-slate-300 border border-slate-700'
+                      ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40 shadow-xs dark:shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                      : 'bg-slate-100 dark:bg-slate-900/60 hover:bg-slate-200 dark:hover:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
                   }`}
                 >
                   {isPassPhoneLocked ? (
@@ -1821,14 +1936,13 @@ This incident log has been scientifically recorded with real-time meteorological
                   )}
                 </button>
 
-                {/* Fallback Browser Mic for Speaker */}
                 <button
                   type="button"
                   onClick={toggleSpeakerMic}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
                     isSpeakerListening
-                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
-                      : 'bg-slate-900/50 text-slate-400 border-slate-700/60 hover:text-slate-200'
+                      ? 'bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-500/50 animate-pulse'
+                      : 'bg-slate-100 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
                   <Mic className="w-3.5 h-3.5" />
@@ -1838,17 +1952,17 @@ This incident log has been scientifically recorded with real-time meteorological
             </div>
 
             {/* Box 2: Listener Readback */}
-            <div className="bg-slate-800/50 backdrop-blur-md border border-slate-700/50 shadow-xl rounded-2xl p-5 sm:p-6">
+            <div className="bg-white/70 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/50 shadow-md dark:shadow-xl rounded-2xl p-5 sm:p-6 text-slate-900 dark:text-slate-100">
               <div className="flex items-center justify-between mb-2.5">
-                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center font-bold text-xs">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center font-bold text-xs">
                     2
                   </span>
                   <span>Listener Readback (Person 2 - What Did You Hear?)</span>
                 </span>
                 {isListenerListening && (
-                  <span className="text-xs text-rose-400 font-semibold animate-pulse flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                  <span className="text-xs text-rose-600 dark:text-rose-400 font-semibold animate-pulse flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-600 dark:bg-rose-500 animate-ping" />
                     Listening (en-IN)...
                   </span>
                 )}
@@ -1860,25 +1974,25 @@ This incident log has been scientifically recorded with real-time meteorological
                   onChange={(e) => setListenerText(e.target.value)}
                   rows={3}
                   placeholder="Hold your Wispr Flow hotkey (Fn or Ctrl+Win) to speak listener readback..."
-                  className="w-full rounded-xl bg-slate-900/50 border border-slate-700/80 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 p-4 text-base text-slate-100 placeholder:text-slate-500 min-h-[100px] transition-all"
+                  className="w-full rounded-xl bg-white dark:bg-slate-900/50 border border-slate-300 dark:border-slate-700/80 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 p-4 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 min-h-[100px] transition-all shadow-xs"
                 />
               </div>
 
               {listenerInterim && (
-                <div className="mt-2 text-xs text-sky-400 italic">
+                <div className="mt-2 text-xs text-sky-700 dark:text-sky-400 italic">
                   Live interim: {listenerInterim}
                 </div>
               )}
 
               {/* Action Buttons for Box 2 */}
-              <div className="mt-4 pt-3.5 border-t border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
+              <div className="mt-4 pt-3.5 border-t border-slate-200 dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={toggleListenerMic}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
                     isListenerListening
-                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
-                      : 'bg-slate-900/50 text-slate-400 border-slate-700/60 hover:text-slate-200'
+                      ? 'bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-500/50 animate-pulse'
+                      : 'bg-slate-100 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700/60 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
                   <Mic className="w-3.5 h-3.5" />
@@ -1889,7 +2003,7 @@ This incident log has been scientifically recorded with real-time meteorological
                   type="button"
                   onClick={handleCheckReadback}
                   disabled={!speakerText.trim() || !listenerText.trim()}
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-md dark:shadow-lg dark:shadow-emerald-500/20 transition-all active:scale-95"
                 >
                   <ShieldCheck className="w-4 h-4" />
                   <span>Unblur & Check Readback</span>
@@ -1897,22 +2011,22 @@ This incident log has been scientifically recorded with real-time meteorological
               </div>
             </div>
 
-            {/* Readback Diff Scorecard: Frosted Glass (UI UPGRADE 1 & 4) */}
+            {/* Readback Diff Scorecard */}
             {verifierResults && (
-              <div className="bg-slate-800/50 backdrop-blur-md border border-slate-700/50 shadow-2xl rounded-2xl p-5 sm:p-6 space-y-4">
-                <h3 className="font-extrabold text-base text-white flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-indigo-400" />
+              <div className="bg-white/80 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/50 shadow-lg dark:shadow-2xl rounded-2xl p-5 sm:p-6 space-y-4 text-slate-900 dark:text-slate-100">
+                <h3 className="font-extrabold text-base flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                   <span>Constraint Verification Scorecard</span>
                 </h3>
 
                 {/* GREEN: Matched */}
                 {verifierResults.matched.length > 0 && (
-                  <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.15)]">
-                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-emerald-300 mb-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-500/40 text-emerald-900 dark:text-emerald-200 shadow-xs dark:shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-emerald-800 dark:text-emerald-300 mb-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                       <span>Matched ({verifierResults.matched.length})</span>
                     </div>
-                    <ul className="text-xs space-y-1 list-disc list-inside text-emerald-200/90">
+                    <ul className="text-xs space-y-1 list-disc list-inside text-emerald-800 dark:text-emerald-200/90">
                       {verifierResults.matched.map((m, idx) => (
                         <li key={idx}>{m}</li>
                       ))}
@@ -1922,12 +2036,12 @@ This incident log has been scientifically recorded with real-time meteorological
 
                 {/* AMBER: Dropped / Forgotten */}
                 {verifierResults.dropped.length > 0 && (
-                  <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 shadow-[0_0_15px_rgba(245,158,11,0.15)]">
-                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-amber-300 mb-1.5">
-                      <AlertTriangle className="w-4 h-4 text-amber-400" />
+                  <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-500/40 text-amber-900 dark:text-amber-200 shadow-xs dark:shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-amber-800 dark:text-amber-300 mb-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                       <span>Dropped / Forgotten ({verifierResults.dropped.length})</span>
                     </div>
-                    <ul className="text-xs space-y-1 list-disc list-inside text-amber-200/90">
+                    <ul className="text-xs space-y-1 list-disc list-inside text-amber-800 dark:text-amber-200/90">
                       {verifierResults.dropped.map((d, idx) => (
                         <li key={idx}>{d}</li>
                       ))}
@@ -1937,16 +2051,16 @@ This incident log has been scientifically recorded with real-time meteorological
 
                 {/* RED: Contradicted / Wrong Number or Negation */}
                 {verifierResults.contradicted.length > 0 && (
-                  <div className="p-4 rounded-xl bg-rose-950/50 border border-rose-500/50 text-rose-200 shadow-[0_0_15px_rgba(244,63,94,0.2)]">
-                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-rose-300 mb-1.5">
-                      <XCircle className="w-4 h-4 text-rose-400" />
+                  <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-500/50 text-rose-900 dark:text-rose-200 shadow-xs dark:shadow-[0_0_15px_rgba(244,63,94,0.2)]">
+                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-rose-800 dark:text-rose-300 mb-1.5">
+                      <XCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                       <span>Contradicted / Dangerous Inversion ({verifierResults.contradicted.length})</span>
                     </div>
                     <div className="space-y-2 text-xs">
                       {verifierResults.contradicted.map((c, idx) => (
-                        <div key={idx} className="p-2.5 rounded-lg bg-slate-900/80 border border-rose-500/30">
-                          <p className="font-bold text-rose-300">{c.item}</p>
-                          <p className="text-slate-300 mt-0.5">{c.reason}</p>
+                        <div key={idx} className="p-2.5 rounded-lg bg-white/90 dark:bg-slate-900/80 border border-rose-200 dark:border-rose-500/30">
+                          <p className="font-bold text-rose-700 dark:text-rose-300">{c.item}</p>
+                          <p className="text-slate-700 dark:text-slate-300 mt-0.5">{c.reason}</p>
                         </div>
                       ))}
                     </div>
@@ -1954,9 +2068,9 @@ This incident log has been scientifically recorded with real-time meteorological
                 )}
 
                 {/* Bold 1-sentence "Say This to Fix It" Repair Prompt */}
-                <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-950/80 via-slate-900 to-indigo-950/80 border border-indigo-500/40 shadow-[0_0_20px_rgba(99,102,241,0.2)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="p-4 rounded-xl bg-indigo-900 dark:bg-gradient-to-r dark:from-indigo-950/80 dark:via-slate-900 dark:to-indigo-950/80 border border-indigo-300 dark:border-indigo-500/40 text-white shadow-md dark:shadow-[0_0_20px_rgba(99,102,241,0.2)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex-1">
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-200 dark:text-indigo-300 flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                       <span>Say This to Fix It:</span>
                     </div>
@@ -1969,7 +2083,7 @@ This incident log has been scientifically recorded with real-time meteorological
                     <button
                       type="button"
                       onClick={() => handleSpeakRepair(verifierResults.repairPrompt)}
-                      className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+                      className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
                       title="Read aloud repair prompt"
                     >
                       <Volume2 className="w-4 h-4" />
@@ -1981,7 +2095,7 @@ This incident log has been scientifically recorded with real-time meteorological
                         navigator.clipboard.writeText(verifierResults.repairPrompt);
                         alert('Repair prompt copied!');
                       }}
-                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+                      className="px-3 py-2 rounded-xl bg-indigo-800 hover:bg-indigo-700 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-100 border border-indigo-700 dark:border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
                       title="Copy to clipboard"
                     >
                       <Copy className="w-4 h-4" />
@@ -1996,10 +2110,12 @@ This incident log has been scientifically recorded with real-time meteorological
 
         {/* ===================================================================
             VIEW 3: ODOUR WITNESS (2 AM - PURE BLACK #000000 & WEATHER WIDGET)
+            CRITICAL THEME OVERRIDE (THEME UPGRADE 4):
+            - Forces pure black #000000 background and white text regardless of theme!
             =================================================================== */}
         {activeTab === 'odour' && (
-          <div className="space-y-6">
-            {/* Pure Black Night Banner (UI UPGRADE 4) */}
+          <div className="space-y-6 text-slate-100">
+            {/* Pure Black Night Banner */}
             <div className="p-4 rounded-2xl bg-[#000000] border border-amber-500/40 text-amber-300 flex items-start justify-between gap-3 shadow-[0_0_25px_rgba(245,158,11,0.15)]">
               <div>
                 <div className="flex items-center gap-2 font-black text-base text-amber-400">
@@ -2007,7 +2123,7 @@ This incident log has been scientifically recorded with real-time meteorological
                   <span>2:00 AM Odour Witness & Meteorological Diagnostics</span>
                 </div>
                 <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                  Deep pure-black (#000000) high-contrast theme for eyes-half-closed comfort. Verifies nocturnal chemical smells against real-time Open-Meteo wind vectors and nocturnal inversion trapping.
+                  Deep pure-black (#000000) high-contrast theme for eyes-half-closed comfort. Always active at night regardless of your light/dark theme preference. Verifies nocturnal chemical smells against real-time Open-Meteo wind vectors and boundary layer height trapping.
                 </p>
               </div>
               <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 flex-shrink-0">
@@ -2054,7 +2170,7 @@ This incident log has been scientifically recorded with real-time meteorological
                 </div>
               </div>
 
-              {/* Large Circular Progressively-Colored Intensity Buttons (UI UPGRADE 4) */}
+              {/* Large Circular Progressively-Colored Intensity Buttons */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">
                   1-Finger Intensity Rating (Progressive Yellow to Deep Red):
@@ -2187,7 +2303,7 @@ This incident log has been scientifically recorded with real-time meteorological
               </div>
             </div>
 
-            {/* Odour Incident Log History: Modern Weather Widget Cards (UI UPGRADE 4) */}
+            {/* Odour Incident Log History: Modern Weather Widget Cards */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-extrabold text-sm uppercase tracking-wider text-slate-300 flex items-center gap-2">
@@ -2218,7 +2334,6 @@ This incident log has been scientifically recorded with real-time meteorological
               ) : (
                 <div className="space-y-3.5">
                   {odourLogs.map((log) => (
-                    /* Modern Weather Widget Card (UI UPGRADE 4) */
                     <div
                       key={log.id}
                       className="bg-slate-900/80 backdrop-blur-md border border-slate-700/60 shadow-2xl rounded-2xl p-5 space-y-4"
@@ -2308,7 +2423,7 @@ This incident log has been scientifically recorded with real-time meteorological
                         </div>
                       </div>
 
-                      {/* Atmospheric Assessment Badge (Glowing Widgets) */}
+                      {/* Atmospheric Assessment Badge */}
                       <div className="p-3.5 rounded-xl bg-black/60 border border-slate-800 text-xs leading-relaxed space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
                           {log.isUpwindPlume && (
