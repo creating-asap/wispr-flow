@@ -338,11 +338,23 @@ export default function App() {
     );
   }, []);
 
-  // Start Push-to-Talk Fallback Mic
-  const handleStartFallbackMic = (e: React.SyntheticEvent) => {
-    e.preventDefault();
+  // Robust Click-to-Toggle Fallback Browser Mic (Bug Fix 1 & 2)
+  const toggleTaskFallbackMic = () => {
+    // If actively listening, stop the session
+    if (isTaskListening) {
+      if (taskRecognitionRef.current) {
+        try {
+          taskRecognitionRef.current.stop();
+        } catch (err) {
+          console.warn('Error stopping speech recognition:', err);
+        }
+      }
+      setIsTaskListening(false);
+      setTaskInterimPreview('');
+      return;
+    }
 
-    // Trigger Wispr upsell banner on first fallback mic interaction
+    // Trigger Wispr upsell banner without interrupting session
     if (!showWisprUpsell) {
       setShowWisprUpsell(true);
       try {
@@ -351,13 +363,17 @@ export default function App() {
     }
 
     if (!isSpeechSupported) {
-      alert('Browser speech recognition is not supported in this browser. Please use Wispr Flow (Fn or Ctrl+Win).');
+      alert('Browser speech recognition is not supported in this browser. Please use Wispr Flow (Fn or Ctrl+Win) or Chrome/Edge.');
       return;
     }
 
-    if (isTaskListening) return;
-
     try {
+      if (taskRecognitionRef.current) {
+        try {
+          taskRecognitionRef.current.stop();
+        } catch (e) {}
+      }
+
       const SpeechRecognition =
         (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       const rec = new SpeechRecognition();
@@ -395,11 +411,11 @@ export default function App() {
 
       rec.onerror = (e: any) => {
         console.warn('Fallback Speech recognition error:', e.error);
+        setIsTaskListening(false);
+        setTaskInterimPreview('');
         if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
           setMicBlockedHelp(true);
         }
-        setIsTaskListening(false);
-        setTaskInterimPreview('');
       };
 
       rec.onend = () => {
@@ -409,24 +425,14 @@ export default function App() {
 
       taskRecognitionRef.current = rec;
       rec.start();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to start fallback browser mic', err);
       setIsTaskListening(false);
-      setMicBlockedHelp(true);
-    }
-  };
-
-  // Stop Push-to-Talk Fallback Mic
-  const handleStopFallbackMic = (e?: React.SyntheticEvent) => {
-    if (e) e.preventDefault();
-    if (taskRecognitionRef.current && isTaskListening) {
-      try {
-        taskRecognitionRef.current.stop();
-      } catch (err) {
-        console.warn('Error stopping recognition', err);
+      setTaskInterimPreview('');
+      if (err?.name === 'NotAllowedError' || err?.message?.toLowerCase().includes('permission') || err?.message?.toLowerCase().includes('not allowed')) {
+        setMicBlockedHelp(true);
       }
     }
-    setIsTaskListening(false);
   };
 
   // Add quick phrase
@@ -571,6 +577,9 @@ export default function App() {
       rec.interimResults = true;
       rec.lang = 'en-IN';
       rec.maxAlternatives = 1;
+      rec.onstart = () => {
+        setIsSpeakerListening(true);
+      };
       rec.onresult = (e: any) => {
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -593,15 +602,15 @@ export default function App() {
         setIsSpeakerListening(false);
         setSpeakerInterim('');
       };
-      rec.onerror = () => {
+      rec.onerror = (err: any) => {
+        console.warn('Speaker mic error:', err);
         setIsSpeakerListening(false);
         setSpeakerInterim('');
       };
       speakerRecRef.current = rec;
       rec.start();
-      setIsSpeakerListening(true);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to start speaker mic:', err);
       setIsSpeakerListening(false);
     }
   };
@@ -625,6 +634,9 @@ export default function App() {
       rec.interimResults = true;
       rec.lang = 'en-IN';
       rec.maxAlternatives = 1;
+      rec.onstart = () => {
+        setIsListenerListening(true);
+      };
       rec.onresult = (e: any) => {
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -647,15 +659,15 @@ export default function App() {
         setIsListenerListening(false);
         setListenerInterim('');
       };
-      rec.onerror = () => {
+      rec.onerror = (err: any) => {
+        console.warn('Listener mic error:', err);
         setIsListenerListening(false);
         setListenerInterim('');
       };
       listenerRecRef.current = rec;
       rec.start();
-      setIsListenerListening(true);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to start listener mic:', err);
       setIsListenerListening(false);
     }
   };
@@ -899,6 +911,9 @@ export default function App() {
       rec.interimResults = true;
       rec.lang = 'en-IN';
       rec.maxAlternatives = 1;
+      rec.onstart = () => {
+        setIsOdourListening(true);
+      };
       rec.onresult = (e: any) => {
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -921,15 +936,15 @@ export default function App() {
         setIsOdourListening(false);
         setOdourInterim('');
       };
-      rec.onerror = () => {
+      rec.onerror = (err: any) => {
+        console.warn('Odour mic error:', err);
         setIsOdourListening(false);
         setOdourInterim('');
       };
       odourRecRef.current = rec;
       rec.start();
-      setIsOdourListening(true);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to start odour mic:', err);
       setIsOdourListening(false);
     }
   };
@@ -1512,27 +1527,22 @@ This incident log has been scientifically recorded with real-time meteorological
                   ))}
                 </div>
 
-                {/* "INFERIOR FALLBACK" MIC: STRICT PUSH-TO-TALK (UPGRADE 2) */}
+                {/* Fallback Browser Mic: Robust Click-to-Toggle (Bug Fix 1) */}
                 <button
                   type="button"
-                  onMouseDown={handleStartFallbackMic}
-                  onMouseUp={handleStopFallbackMic}
-                  onMouseLeave={handleStopFallbackMic}
-                  onTouchStart={handleStartFallbackMic}
-                  onTouchEnd={handleStopFallbackMic}
-                  onTouchCancel={handleStopFallbackMic}
+                  onClick={toggleTaskFallbackMic}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border select-none transition-all cursor-pointer ${
                     isTaskListening
                       ? 'border-rose-500/50 bg-rose-500/20 text-rose-300 ring-2 ring-rose-500 animate-pulse'
                       : 'border-amber-500/30 text-amber-600 dark:text-amber-500/70 hover:bg-amber-500/10'
                   }`}
-                  title="Push-to-Talk (Hold while speaking). Warning: Web Speech has lower accuracy than Wispr Flow desktop."
+                  title={isTaskListening ? 'Click to stop recording' : 'Click to start fallback browser mic'}
                 >
                   <Mic className={`w-3.5 h-3.5 ${isTaskListening ? 'text-rose-400 animate-bounce' : 'text-amber-500/70'}`} />
                   <span>
                     {isTaskListening
-                      ? 'Browser Mic (Low Accuracy)...'
-                      : 'Fallback Browser Mic (Hold to Talk)'}
+                      ? 'Browser Mic (Recording)...'
+                      : 'Fallback Mic (Click to Toggle)'}
                   </span>
                 </button>
               </div>
@@ -2014,14 +2024,19 @@ This incident log has been scientifically recorded with real-time meteorological
                 <button
                   type="button"
                   onClick={toggleSpeakerMic}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border select-none transition-all cursor-pointer ${
                     isSpeakerListening
-                      ? 'bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-500/50 animate-pulse'
+                      ? 'border-rose-500/50 bg-rose-500/20 text-rose-700 dark:text-rose-300 ring-2 ring-rose-500 animate-pulse'
                       : 'border-amber-500/30 text-amber-600 dark:text-amber-500/70 hover:bg-amber-500/10'
                   }`}
+                  title={isSpeakerListening ? 'Click to stop recording' : 'Click to start fallback browser mic'}
                 >
-                  <Mic className="w-3.5 h-3.5" />
-                  <span>Fallback Browser Mic</span>
+                  <Mic className={`w-3.5 h-3.5 ${isSpeakerListening ? 'text-rose-600 dark:text-rose-400 animate-bounce' : 'text-amber-500/70'}`} />
+                  <span>
+                    {isSpeakerListening
+                      ? 'Browser Mic (Recording)...'
+                      : 'Fallback Mic (Click to Toggle)'}
+                  </span>
                 </button>
               </div>
             </div>
@@ -2077,14 +2092,19 @@ This incident log has been scientifically recorded with real-time meteorological
                 <button
                   type="button"
                   onClick={toggleListenerMic}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border select-none transition-all cursor-pointer ${
                     isListenerListening
-                      ? 'bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-500/50 animate-pulse'
+                      ? 'border-rose-500/50 bg-rose-500/20 text-rose-700 dark:text-rose-300 ring-2 ring-rose-500 animate-pulse'
                       : 'border-amber-500/30 text-amber-600 dark:text-amber-500/70 hover:bg-amber-500/10'
                   }`}
+                  title={isListenerListening ? 'Click to stop recording' : 'Click to start fallback browser mic'}
                 >
-                  <Mic className="w-3.5 h-3.5" />
-                  <span>Fallback Browser Mic</span>
+                  <Mic className={`w-3.5 h-3.5 ${isListenerListening ? 'text-rose-600 dark:text-rose-400 animate-bounce' : 'text-amber-500/70'}`} />
+                  <span>
+                    {isListenerListening
+                      ? 'Browser Mic (Recording)...'
+                      : 'Fallback Mic (Click to Toggle)'}
+                  </span>
                 </button>
 
                 <button
@@ -2250,10 +2270,19 @@ This incident log has been scientifically recorded with real-time meteorological
                   <button
                     type="button"
                     onClick={toggleOdourMic}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-black text-amber-500/70 border border-amber-500/30 hover:bg-amber-500/10 transition-all"
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border select-none transition-all cursor-pointer ${
+                      isOdourListening
+                        ? 'border-rose-500/50 bg-rose-500/20 text-rose-300 ring-2 ring-rose-500 animate-pulse'
+                        : 'border-amber-500/30 text-amber-500/70 hover:bg-amber-500/10 bg-black'
+                    }`}
+                    title={isOdourListening ? 'Click to stop recording' : 'Click to start fallback browser mic'}
                   >
-                    <Mic className="w-3 h-3" />
-                    <span>Fallback Browser Mic</span>
+                    <Mic className={`w-3.5 h-3.5 ${isOdourListening ? 'text-rose-400 animate-bounce' : 'text-amber-500/70'}`} />
+                    <span>
+                      {isOdourListening
+                        ? 'Browser Mic (Recording)...'
+                        : 'Fallback Mic (Click to Toggle)'}
+                    </span>
                   </button>
                 </div>
               </div>
