@@ -47,7 +47,11 @@ import {
   Trash,
   Beaker,
   Layers,
-  ThermometerSnowflake
+  ThermometerSnowflake,
+  Inbox,
+  Radio,
+  Keyboard,
+  Navigation
 } from 'lucide-react';
 
 // ============================================================================
@@ -247,7 +251,7 @@ export default function App() {
   }, [customTabs]);
 
   // --------------------------------------------------------------------------
-  // SPEECH RECOGNITION INSTANCE (ANTI-STUTTER FIXED ENGINE)
+  // SPEECH RECOGNITION (FALLBACK BROWSER MIC - HARDCODED en-IN & maxAlternatives=1)
   // --------------------------------------------------------------------------
   const taskRecognitionRef = useRef<any>(null);
 
@@ -260,7 +264,7 @@ export default function App() {
 
   const toggleTaskMic = () => {
     if (!isSpeechSupported) {
-      alert('Speech Recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
+      alert('Browser speech recognition is not available. Please use Wispr Flow (Fn or Ctrl+Win) or Chrome/Edge.');
       return;
     }
 
@@ -279,7 +283,9 @@ export default function App() {
       const rec = new SpeechRecognition();
       rec.continuous = true;
       rec.interimResults = true;
-      rec.lang = speechLang;
+      // UI Upgrade 2: Hardcoded to 'en-IN' and maxAlternatives = 1
+      rec.lang = 'en-IN';
+      rec.maxAlternatives = 1;
 
       rec.onstart = () => {
         setIsTaskListening(true);
@@ -330,7 +336,7 @@ export default function App() {
       taskRecognitionRef.current = rec;
       rec.start();
     } catch (err) {
-      console.error('Failed to start speech recognition', err);
+      console.error('Failed to start fallback browser mic', err);
       setIsTaskListening(false);
       setMicBlockedHelp(true);
     }
@@ -338,7 +344,6 @@ export default function App() {
 
   // Add quick phrase
   const handleInsertQuickPhrase = (phrase: string) => {
-    // Strip the leading '+ '
     const cleanPhrase = phrase.replace(/^\+\s*/, '');
     setTaskInputText((prev) => {
       const needsSpace = prev.length > 0 && !prev.endsWith(' ') && !prev.endsWith('\n');
@@ -420,7 +425,7 @@ export default function App() {
   // Delete Custom Tab
   const handleDeleteCustomTab = (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Delete this tab and move its tasks to Quick Notes?')) {
+    if (confirm(`Delete "${allTaskTabs.find(t => t.id === tabId)?.name || 'this tab'}" and move tasks to Quick Notes?`)) {
       setCustomTabs((prev) => prev.filter((t) => t.id !== tabId));
       setTasks((prev) =>
         prev.map((t) => (t.tabId === tabId ? { ...t, tabId: 'quick_notes' } : t))
@@ -460,7 +465,7 @@ export default function App() {
   const speakerRecRef = useRef<any>(null);
   const listenerRecRef = useRef<any>(null);
 
-  // Toggle Speaker Mic
+  // Toggle Speaker Fallback Mic (Hardcoded en-IN & maxAlternatives=1)
   const toggleSpeakerMic = () => {
     if (!isSpeechSupported) {
       alert('Speech recognition not supported in this browser.');
@@ -477,7 +482,8 @@ export default function App() {
       const rec = new SR();
       rec.continuous = true;
       rec.interimResults = true;
-      rec.lang = speechLang;
+      rec.lang = 'en-IN';
+      rec.maxAlternatives = 1;
       rec.onresult = (e: any) => {
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -513,7 +519,7 @@ export default function App() {
     }
   };
 
-  // Toggle Listener Mic
+  // Toggle Listener Fallback Mic (Hardcoded en-IN & maxAlternatives=1)
   const toggleListenerMic = () => {
     if (!isSpeechSupported) {
       alert('Speech recognition not supported in this browser.');
@@ -530,7 +536,8 @@ export default function App() {
       const rec = new SR();
       rec.continuous = true;
       rec.interimResults = true;
-      rec.lang = speechLang;
+      rec.lang = 'en-IN';
+      rec.maxAlternatives = 1;
       rec.onresult = (e: any) => {
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -594,7 +601,7 @@ export default function App() {
     const text = speakerText;
     if (!text) return { numbers: [], negations: [], conditions: [] };
 
-    // 1. Numbers / Times: digits or numbers with units (e.g. 15, 50, 2 PM, 50 rupees, 15 pills)
+    // 1. Numbers / Times: digits or numbers with units
     const numberMatches = text.match(/\b\d+(?:\.\d+)?(?:\s*(?:am|pm|pills?|rupees?|rs|packets?|kg|gm|l|ml))?\b/gi) || [];
     const uniqueNumbers = Array.from(new Set(numberMatches));
 
@@ -621,7 +628,6 @@ export default function App() {
     const val = parseInt(digits, 10);
     let flippedVal = val;
 
-    // Teen to Ty map
     const flipMap: Record<number, number> = {
       13: 30, 30: 13,
       14: 40, 40: 14,
@@ -643,7 +649,6 @@ export default function App() {
     } else if (val >= 20 && val <= 90 && val % 10 === 0) {
       flippedVal = 10 + Math.floor(val / 10);
     } else {
-      // Default fallback flip
       flippedVal = val === 15 ? 50 : 15;
     }
 
@@ -680,11 +685,9 @@ export default function App() {
       const digits = matchNum ? matchNum[0] : item;
       const numVal = parseInt(digits, 10);
 
-      // Check if exact number appears in listener text
       if (lLower.includes(digits)) {
-        matched.push(`Number "${item}" matched`);
+        matched.push(`Quantity "${item}" accurately preserved`);
       } else {
-        // Check if Teen-Ty flip occurred (e.g. said 15, listener said 50)
         let teenTyPartner = '';
         if (numVal === 15 && lLower.includes('50')) teenTyPartner = '50';
         else if (numVal === 50 && lLower.includes('15')) teenTyPartner = '15';
@@ -700,7 +703,7 @@ export default function App() {
           });
           repairFixes.push(`Make sure it is ${item}, NOT ${teenTyPartner}`);
         } else {
-          dropped.push(`Number "${item}" missing in readback`);
+          dropped.push(`Quantity "${item}" missing in readback`);
           repairFixes.push(`Confirm quantity "${item}"`);
         }
       }
@@ -708,7 +711,6 @@ export default function App() {
 
     // 2. Analyze Negations (Dangerous inversion check!)
     speakerConstraints.negations.forEach((neg) => {
-      // Find context around negation in speaker text (e.g. "mat dena", "never accept")
       const reg = new RegExp(`\\b${neg}\\s+([a-zA-Z]+)`, 'i');
       const sContext = speakerText.match(reg);
       const targetVerb = sContext ? sContext[1].toLowerCase() : '';
@@ -716,7 +718,6 @@ export default function App() {
       if (lLower.includes(neg)) {
         matched.push(`Negation "${neg}" preserved`);
       } else if (targetVerb && lLower.includes(targetVerb)) {
-        // Danger! Listener repeated verb WITHOUT the negation!
         contradicted.push({
           item: `Negation "${neg}" was dropped on verb "${targetVerb}"`,
           reason: `Speaker said "${neg} ${targetVerb}", but listener said "${targetVerb}" (Action inverted!)`,
@@ -772,7 +773,7 @@ export default function App() {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = speechLang;
+      utterance.lang = 'en-IN';
       utterance.rate = 0.95;
       window.speechSynthesis.speak(utterance);
     } else {
@@ -781,7 +782,7 @@ export default function App() {
   };
 
   // --------------------------------------------------------------------------
-  // SECTION 5: ODOUR WITNESS (2 AM)
+  // SECTION 5: ODOUR WITNESS (2 AM) - PURE BLACK #000000 & WEATHER WIDGET
   // --------------------------------------------------------------------------
   const [odourNotes, setOdourNotes] = useState('');
   const [odourInterim, setOdourInterim] = useState('');
@@ -795,7 +796,7 @@ export default function App() {
   const [isOdourListening, setIsOdourListening] = useState(false);
   const odourRecRef = useRef<any>(null);
 
-  // Toggle Odour Voice Mic
+  // Toggle Odour Fallback Voice Mic (Hardcoded en-IN & maxAlternatives=1)
   const toggleOdourMic = () => {
     if (!isSpeechSupported) {
       alert('Speech recognition not supported.');
@@ -812,7 +813,8 @@ export default function App() {
       const rec = new SR();
       rec.continuous = true;
       rec.interimResults = true;
-      rec.lang = speechLang;
+      rec.lang = 'en-IN';
+      rec.maxAlternatives = 1;
       rec.onresult = (e: any) => {
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -889,7 +891,6 @@ export default function App() {
         throw new Error('No hourly meteorological data returned');
       }
 
-      // Find the closest hour entry to current time
       const now = new Date();
       let bestIdx = 0;
       let minDiff = Infinity;
@@ -979,7 +980,7 @@ This incident log has been scientifically recorded with real-time meteorological
     setOdourLogs((prev) => prev.filter((item) => item.id !== id));
   };
 
-  // Is pitch black mode active
+  // Check if pure pitch-black night theme is active (Odour Witness Tab)
   const isNightTheme = activeTab === 'odour';
 
   // ==========================================================================
@@ -989,93 +990,58 @@ This incident log has been scientifically recorded with real-time meteorological
     <div
       className={`min-h-screen font-sans transition-colors duration-300 ${
         isNightTheme
-          ? 'bg-[#080b12] text-slate-100 selection:bg-amber-500/30'
-          : 'bg-slate-50 text-slate-900 selection:bg-indigo-500/20'
+          ? 'bg-[#000000] text-slate-100 selection:bg-amber-500/30'
+          : 'bg-gradient-to-br from-slate-950 via-gray-900 to-slate-950 text-slate-100 selection:bg-indigo-500/30'
       }`}
     >
       {/* =====================================================================
-          HEADER & TOP NAVIGATION (Section 2)
+          HEADER & SLEEK SEGMENTED TAB BAR (UI UPGRADE 1)
           ===================================================================== */}
-      <header
-        className={`sticky top-0 z-40 border-b backdrop-blur-md transition-colors ${
-          isNightTheme
-            ? 'bg-[#080b12]/90 border-slate-800'
-            : 'bg-white/90 border-slate-200 shadow-sm'
-        }`}
-      >
-        <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2.5">
-          {/* Brand & Status Bar */}
-          <div className="flex items-center justify-between gap-3 mb-2">
+      <header className="sticky top-0 z-40 backdrop-blur-xl bg-slate-950/70 border-b border-slate-800/80 transition-colors">
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 py-3">
+          {/* Top Row: Brand & Wispr Flow Desktop Guide */}
+          <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2.5">
               <div
-                className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm ${
+                className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-lg shadow-lg ${
                   isNightTheme
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                    : 'bg-indigo-600 text-white shadow-indigo-200'
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 shadow-amber-500/10'
+                    : 'bg-gradient-to-tr from-indigo-600 to-violet-500 text-white shadow-indigo-500/20'
                 }`}
               >
-                {isNightTheme ? <Moon className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                {isNightTheme ? <Moon className="w-5 h-5" /> : <Sparkles className="w-5 h-5 text-indigo-200" />}
               </div>
               <div>
-                <h1 className="font-extrabold text-base sm:text-lg tracking-tight leading-none flex items-center gap-2">
+                <h1 className="font-extrabold text-base sm:text-lg tracking-tight leading-none flex items-center gap-2 text-white">
                   <span>Wispr Workspace</span>
-                  <span
-                    className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full ${
-                      isNightTheme
-                        ? 'bg-slate-800 text-amber-400 border border-amber-400/20'
-                        : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                    }`}
-                  >
-                    v2.0
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                    Flow v2
                   </span>
                 </h1>
-                <p
-                  className={`text-xs ${
-                    isNightTheme ? 'text-slate-400' : 'text-slate-500'
-                  }`}
-                >
-                  Voice Workspace · Speech Verifier · Odour Witness
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Voice Workspace · Readback Verifier · 2 AM Odour Witness
                 </p>
               </div>
             </div>
 
-            {/* Language Quick Switch & Browser Status */}
+            {/* Desktop Wispr Flow Shortcut Badge & Browser Support */}
             <div className="flex items-center gap-2">
-              <div
-                className={`flex items-center rounded-lg p-1 text-xs border ${
-                  isNightTheme
-                    ? 'bg-slate-900 border-slate-800'
-                    : 'bg-slate-100 border-slate-200'
-                }`}
-                title="Select Speech Recognition Language"
-              >
-                {(['en-IN', 'hi-IN', 'en-US'] as SpeechLang[]).map((lang) => (
-                  <button
-                    key={lang}
-                    onClick={() => setSpeechLang(lang)}
-                    className={`px-2 py-1 rounded-md text-xs font-semibold transition-all ${
-                      speechLang === lang
-                        ? isNightTheme
-                          ? 'bg-amber-500 text-black shadow'
-                          : 'bg-white text-indigo-600 shadow-sm'
-                        : isNightTheme
-                        ? 'text-slate-400 hover:text-white'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {lang === 'en-IN' ? 'EN-IN' : lang === 'hi-IN' ? 'HI-IN' : 'EN-US'}
-                  </button>
-                ))}
+              <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-700/60 text-xs text-slate-300 shadow-inner">
+                <Keyboard className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="font-medium text-slate-400">Wispr Flow:</span>
+                <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-600 font-mono text-[11px] text-indigo-300 font-bold shadow-xs">
+                  Fn
+                </kbd>
+                <span className="text-slate-500">or</span>
+                <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-600 font-mono text-[11px] text-indigo-300 font-bold shadow-xs">
+                  Ctrl+Win
+                </kbd>
               </div>
 
-              {/* Mic blocked open link */}
+              {/* Mic blocked helper link */}
               <button
                 onClick={() => window.open(window.location.href, '_blank')}
-                className={`p-2 rounded-lg border text-xs font-medium flex items-center gap-1 transition-colors ${
-                  isNightTheme
-                    ? 'border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
-                    : 'border-slate-200 text-slate-600 hover:bg-slate-100'
-                }`}
+                className="px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors flex items-center gap-1.5"
                 title="Open in new browser tab if microphone is blocked in iframe"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -1084,30 +1050,24 @@ This incident log has been scientifically recorded with real-time meteorological
             </div>
           </div>
 
-          {/* Navigation Tab Bar (Section 2) */}
-          <nav className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 no-scrollbar">
+          {/* Top Navigation Tab Bar: Sleek Segmented Control */}
+          <div className="bg-slate-900/60 backdrop-blur-lg border border-slate-800/80 p-1.5 rounded-2xl flex items-center gap-1.5 overflow-x-auto no-scrollbar shadow-inner">
             {/* 1. Shopping */}
             <button
               onClick={() => setActiveTab('shopping')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'shopping'
-                  ? isNightTheme
-                    ? 'bg-amber-500 text-black font-bold'
-                    : 'bg-indigo-600 text-white shadow-sm'
-                  : isNightTheme
-                  ? 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                  ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
               }`}
             >
               <span>Shopping</span>
               {tasks.filter((t) => t.tabId === 'shopping').length > 0 && (
                 <span
-                  className={`text-xs px-1.5 py-0.2 rounded-full font-bold ${
+                  className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
                     activeTab === 'shopping'
-                      ? 'bg-black/20 text-current'
-                      : isNightTheme
-                      ? 'bg-slate-800 text-slate-300'
-                      : 'bg-slate-200 text-slate-700'
+                      ? 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/30'
+                      : 'bg-slate-800 text-slate-400'
                   }`}
                 >
                   {tasks.filter((t) => t.tabId === 'shopping').length}
@@ -1118,25 +1078,19 @@ This incident log has been scientifically recorded with real-time meteorological
             {/* 2. Can Wait / Later */}
             <button
               onClick={() => setActiveTab('can_wait')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'can_wait'
-                  ? isNightTheme
-                    ? 'bg-amber-500 text-black font-bold'
-                    : 'bg-indigo-600 text-white shadow-sm'
-                  : isNightTheme
-                  ? 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                  ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
               }`}
             >
               <span>Can Wait / Later</span>
               {tasks.filter((t) => t.tabId === 'can_wait').length > 0 && (
                 <span
-                  className={`text-xs px-1.5 py-0.2 rounded-full font-bold ${
+                  className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
                     activeTab === 'can_wait'
-                      ? 'bg-black/20 text-current'
-                      : isNightTheme
-                      ? 'bg-slate-800 text-slate-300'
-                      : 'bg-slate-200 text-slate-700'
+                      ? 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/30'
+                      : 'bg-slate-800 text-slate-400'
                   }`}
                 >
                   {tasks.filter((t) => t.tabId === 'can_wait').length}
@@ -1147,25 +1101,19 @@ This incident log has been scientifically recorded with real-time meteorological
             {/* 3. Do Now / Urgent */}
             <button
               onClick={() => setActiveTab('do_now')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'do_now'
-                  ? isNightTheme
-                    ? 'bg-amber-500 text-black font-bold'
-                    : 'bg-indigo-600 text-white shadow-sm'
-                  : isNightTheme
-                  ? 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                  ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
               }`}
             >
               <span>Do Now / Urgent</span>
               {tasks.filter((t) => t.tabId === 'do_now').length > 0 && (
                 <span
-                  className={`text-xs px-1.5 py-0.2 rounded-full font-bold ${
+                  className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
                     activeTab === 'do_now'
-                      ? 'bg-black/20 text-current'
-                      : isNightTheme
-                      ? 'bg-slate-800 text-slate-300'
-                      : 'bg-slate-200 text-slate-700'
+                      ? 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/30'
+                      : 'bg-slate-800 text-slate-400'
                   }`}
                 >
                   {tasks.filter((t) => t.tabId === 'do_now').length}
@@ -1176,25 +1124,19 @@ This incident log has been scientifically recorded with real-time meteorological
             {/* 4. Quick Notes */}
             <button
               onClick={() => setActiveTab('quick_notes')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'quick_notes'
-                  ? isNightTheme
-                    ? 'bg-amber-500 text-black font-bold'
-                    : 'bg-indigo-600 text-white shadow-sm'
-                  : isNightTheme
-                  ? 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                  : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                  ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
               }`}
             >
               <span>Quick Notes</span>
               {tasks.filter((t) => t.tabId === 'quick_notes').length > 0 && (
                 <span
-                  className={`text-xs px-1.5 py-0.2 rounded-full font-bold ${
+                  className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
                     activeTab === 'quick_notes'
-                      ? 'bg-black/20 text-current'
-                      : isNightTheme
-                      ? 'bg-slate-800 text-slate-300'
-                      : 'bg-slate-200 text-slate-700'
+                      ? 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/30'
+                      : 'bg-slate-800 text-slate-400'
                   }`}
                 >
                   {tasks.filter((t) => t.tabId === 'quick_notes').length}
@@ -1202,18 +1144,14 @@ This incident log has been scientifically recorded with real-time meteorological
               )}
             </button>
 
-            {/* User Custom Tabs */}
+            {/* Custom User Tabs */}
             {customTabs.map((ct) => (
               <div
                 key={ct.id}
-                className={`group flex items-center rounded-lg pl-3 pr-1.5 py-1 text-sm font-semibold whitespace-nowrap transition-all ${
+                className={`group flex items-center rounded-xl pl-3 pr-1.5 py-1 text-xs sm:text-sm whitespace-nowrap transition-all duration-200 ${
                   activeTab === ct.id
-                    ? isNightTheme
-                      ? 'bg-amber-500 text-black font-bold'
-                      : 'bg-indigo-600 text-white shadow-sm'
-                    : isNightTheme
-                    ? 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                    : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                    ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.25)] font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 border border-transparent'
                 }`}
               >
                 <button
@@ -1223,12 +1161,10 @@ This incident log has been scientifically recorded with real-time meteorological
                   <span>{ct.name}</span>
                   {tasks.filter((t) => t.tabId === ct.id).length > 0 && (
                     <span
-                      className={`text-xs px-1.5 py-0.2 rounded-full font-bold ${
+                      className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
                         activeTab === ct.id
-                          ? 'bg-black/20 text-current'
-                          : isNightTheme
-                          ? 'bg-slate-800 text-slate-300'
-                          : 'bg-slate-200 text-slate-700'
+                          ? 'bg-indigo-500/30 text-indigo-200'
+                          : 'bg-slate-800 text-slate-400'
                       }`}
                     >
                       {tasks.filter((t) => t.tabId === ct.id).length}
@@ -1238,11 +1174,7 @@ This incident log has been scientifically recorded with real-time meteorological
                 <button
                   onClick={(e) => handleDeleteCustomTab(ct.id, e)}
                   title={`Delete ${ct.name} tab`}
-                  className={`p-1 rounded-md opacity-60 hover:opacity-100 transition-opacity ${
-                    activeTab === ct.id
-                      ? 'hover:bg-black/20 text-current'
-                      : 'hover:bg-red-500/20 hover:text-red-400'
-                  }`}
+                  className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1251,7 +1183,7 @@ This incident log has been scientifically recorded with real-time meteorological
 
             {/* 5. + New Tab Button */}
             {isCreatingTab ? (
-              <div className="flex items-center gap-1 bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-600 rounded-lg p-1 shadow-sm">
+              <div className="flex items-center gap-1.5 bg-slate-900 border border-indigo-500/50 rounded-xl px-2 py-1 shadow-lg">
                 <input
                   type="text"
                   value={newTabName}
@@ -1262,17 +1194,17 @@ This incident log has been scientifically recorded with real-time meteorological
                   }}
                   autoFocus
                   placeholder="Tab name (e.g. Work)"
-                  className="px-2 py-1 text-xs bg-transparent border-none focus:outline-none text-slate-900 dark:text-white w-28"
+                  className="px-2 py-1 text-xs bg-transparent border-none focus:outline-none text-slate-100 placeholder:text-slate-500 w-28"
                 />
                 <button
                   onClick={handleCreateCustomTab}
-                  className="px-2 py-1 rounded bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700"
+                  className="px-2 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 shadow-sm"
                 >
                   Save
                 </button>
                 <button
                   onClick={() => setIsCreatingTab(false)}
-                  className="p-1 text-slate-400 hover:text-slate-600"
+                  className="p-1 text-slate-400 hover:text-slate-200"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1280,56 +1212,46 @@ This incident log has been scientifically recorded with real-time meteorological
             ) : (
               <button
                 onClick={() => setIsCreatingTab(true)}
-                className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-semibold border border-dashed whitespace-nowrap transition-colors ${
-                  isNightTheme
-                    ? 'border-slate-700 text-slate-400 hover:text-white hover:border-slate-500'
-                    : 'border-slate-300 text-slate-600 hover:text-indigo-600 hover:border-indigo-400'
-                }`}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-medium border border-dashed border-slate-700/80 text-slate-400 hover:text-indigo-300 hover:border-indigo-500/50 hover:bg-slate-800/40 transition-all whitespace-nowrap"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5" />
                 <span>New Tab</span>
               </button>
             )}
 
-            <div className="h-5 w-[1px] bg-slate-300 dark:bg-slate-800 mx-1 flex-shrink-0" />
+            <div className="h-5 w-[1px] bg-slate-800 mx-1 flex-shrink-0" />
 
-            {/* 6. Readback Verifier (Special Tab) */}
+            {/* 6. Readback Verifier */}
             <button
               onClick={() => setActiveTab('verifier')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'verifier'
-                  ? isNightTheme
-                    ? 'bg-emerald-500 text-black font-bold'
-                    : 'bg-emerald-600 text-white shadow-sm'
-                  : isNightTheme
-                  ? 'text-emerald-400/80 hover:text-emerald-300 hover:bg-slate-800/60'
-                  : 'text-emerald-700 hover:bg-emerald-50'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.25)] font-semibold'
+                  : 'text-emerald-400/70 hover:text-emerald-300 hover:bg-emerald-950/30 border border-transparent'
               }`}
             >
-              <ShieldCheck className="w-4 h-4" />
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <span>Readback Verifier</span>
             </button>
 
-            {/* 7. Odour Witness (2 AM) (Special Tab) */}
+            {/* 7. Odour Witness (2 AM) */}
             <button
               onClick={() => setActiveTab('odour')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'odour'
-                  ? 'bg-amber-400 text-black font-bold ring-2 ring-amber-400/50'
-                  : isNightTheme
-                  ? 'text-amber-400 hover:bg-slate-800/80'
-                  : 'text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.25)] font-semibold ring-1 ring-amber-500/30'
+                  : 'text-amber-400/80 hover:text-amber-300 hover:bg-amber-950/30 border border-transparent'
               }`}
             >
-              <Moon className="w-4 h-4 text-amber-500 animate-pulse" />
+              <Moon className="w-4 h-4 text-amber-400 animate-pulse" />
               <span>Odour Witness (2 AM)</span>
             </button>
-          </nav>
+          </div>
         </div>
       </header>
 
       {/* =====================================================================
-          MAIN CONTENT AREA
+          MAIN CONTENT AREA (DARK GLASSMORPHISM)
           ===================================================================== */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* ===================================================================
@@ -1337,52 +1259,62 @@ This incident log has been scientifically recorded with real-time meteorological
             =================================================================== */}
         {activeTab !== 'verifier' && activeTab !== 'odour' && (
           <div className="space-y-6">
-            {/* Helper Alert if mic is blocked */}
+            {/* Helper alert if mic blocked */}
             {micBlockedHelp && (
-              <div className="p-4 rounded-xl border bg-amber-50 border-amber-300 text-amber-900 text-sm flex items-start gap-3 shadow-sm">
-                <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-600 mt-0.5" />
+              <div className="p-4 rounded-2xl border border-amber-500/40 bg-amber-950/30 backdrop-blur-md text-amber-200 text-sm flex items-start gap-3 shadow-lg">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-400 mt-0.5" />
                 <div className="flex-1">
-                  <p className="font-semibold">Microphone Access Restricted</p>
-                  <p className="mt-0.5 text-xs text-amber-800">
-                    If this app is running in an embedded preview/iframe, browser security prevents microphone access. Click below to open in a new tab with full microphone permissions.
+                  <p className="font-semibold text-amber-300">Microphone Access Restricted</p>
+                  <p className="mt-0.5 text-xs text-amber-200/80">
+                    Browser security blocks mic access in embedded frames. Wispr Flow desktop app still works universally using your global hotkey (Fn or Ctrl+Win). Alternatively, open this app in a standalone tab.
                   </p>
                   <button
                     onClick={() => window.open(window.location.href, '_blank')}
-                    className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700"
+                    className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition-all"
                   >
                     <ExternalLink className="w-3.5 h-3.5" /> Open in New Browser Tab
                   </button>
                 </div>
                 <button
                   onClick={() => setMicBlockedHelp(false)}
-                  className="text-amber-500 hover:text-amber-800"
+                  className="text-amber-400 hover:text-white"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             )}
 
-            {/* Voice Input Card (Section 2 & 3) */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 transition-shadow hover:shadow-md">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                  <Mic className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Voice & Text Input</span>
-                  <span className="text-[11px] text-slate-400 font-normal">
-                    (Wispr Flow & Web Speech compatible)
-                  </span>
-                </label>
-
-                {/* Live Mic Indicator */}
-                {isTaskListening && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-red-50 text-red-600 border border-red-200 rounded-full text-xs font-semibold animate-pulse">
-                    <span className="w-2 h-2 rounded-full bg-red-600 animate-ping" />
-                    <span>Listening ({speechLang})...</span>
+            {/* Voice Input Card: Frosted Glass & Wispr Flow Optimized (UI UPGRADE 1 & 2) */}
+            <div className="bg-slate-800/50 backdrop-blur-md border border-slate-700/50 shadow-xl rounded-2xl p-5 sm:p-6 transition-all">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                    <Sparkles className="w-4 h-4" />
                   </div>
-                )}
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                      Wispr Flow Voice Dictation
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-normal">
+                      Focus input and hold your global desktop hotkey
+                    </span>
+                  </div>
+                </div>
+
+                {/* Desktop Hotkey Pills */}
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <span className="text-[11px] text-slate-400 hidden sm:inline">Hotkey:</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-[11px] text-indigo-300 font-semibold shadow-xs">
+                    Fn
+                  </span>
+                  <span className="text-slate-500">/</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-700 font-mono text-[11px] text-indigo-300 font-semibold shadow-xs">
+                    Ctrl+Win
+                  </span>
+                </div>
               </div>
 
-              {/* Textarea: standard HTML, 16px font, 48px touch target */}
+              {/* Textarea: Premium Dark Glass & Wispr Flow Placeholder (UI UPGRADE 2) */}
               <div className="relative">
                 <textarea
                   value={taskInputText}
@@ -1394,70 +1326,75 @@ This incident log has been scientifically recorded with real-time meteorological
                     }
                   }}
                   rows={3}
-                  placeholder={`Speak or type note for ${
-                    allTaskTabs.find((t) => t.id === targetSaveTab)?.name || 'active tab'
-                  }... (Speech recognition autocorrects Hinglish)`}
-                  style={{ fontSize: '16px' }}
-                  className="w-full rounded-xl border border-slate-300 p-3 sm:p-4 text-base min-h-[96px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all placeholder:text-slate-400 resize-y"
+                  placeholder="Hold your Wispr Flow hotkey (Fn or Ctrl+Win) to speak..."
+                  className="w-full bg-slate-900/50 border border-slate-700/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl p-4 text-lg text-slate-100 placeholder:text-slate-500 transition-all min-h-[110px] resize-y"
                 />
-
-                {/* Mic Activation Button Overlay */}
-                <button
-                  type="button"
-                  onClick={toggleTaskMic}
-                  style={{ minWidth: '48px', minHeight: '48px' }}
-                  className={`absolute bottom-3 right-3 rounded-xl flex items-center justify-center transition-all shadow-md ${
-                    isTaskListening
-                      ? 'bg-red-600 text-white ring-4 ring-red-200 scale-105'
-                      : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105'
-                  }`}
-                  title={isTaskListening ? 'Stop Listening' : 'Tap to Speak'}
-                >
-                  {isTaskListening ? (
-                    <MicOff className="w-5 h-5 animate-bounce" />
-                  ) : (
-                    <Mic className="w-5 h-5" />
-                  )}
-                </button>
               </div>
 
               {/* CRITICAL ANTI-STUTTER: Subtle Interim Preview Badge */}
               {taskInterimPreview && (
-                <div className="mt-2.5 px-3 py-1.5 rounded-lg bg-sky-50 border border-sky-200 text-sky-800 text-xs flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse flex-shrink-0" />
-                  <span className="font-medium text-sky-600 flex-shrink-0">Live Preview:</span>
+                <div className="mt-2 px-3 py-1.5 rounded-xl bg-sky-950/40 border border-sky-500/30 text-sky-300 text-xs flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse flex-shrink-0" />
+                  <span className="font-semibold text-sky-400 flex-shrink-0">Live Interim:</span>
                   <span className="italic truncate">{taskInterimPreview}</span>
                 </div>
               )}
 
-              {/* 1-Tap Quick Phrase Bar below the mic */}
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-400 font-medium">Quick Phrases:</span>
-                {QUICK_PHRASES.map((phrase) => (
-                  <button
-                    key={phrase}
-                    type="button"
-                    onClick={() => handleInsertQuickPhrase(phrase)}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border border-slate-200 transition-colors"
-                  >
-                    {phrase}
-                  </button>
-                ))}
+              {/* Controls Bar Below Textarea: Fallback Mic & Quick Phrases */}
+              <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3">
+                {/* 1-Tap Quick Phrase Bar */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-slate-400 font-medium mr-1">Quick Add:</span>
+                  {QUICK_PHRASES.map((phrase) => (
+                    <button
+                      key={phrase}
+                      type="button"
+                      onClick={() => handleInsertQuickPhrase(phrase)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-900/60 text-slate-300 hover:text-indigo-200 hover:bg-indigo-950/40 border border-slate-700/60 hover:border-indigo-500/40 transition-all"
+                    >
+                      {phrase}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Subtle Fallback Browser Mic Button (UI UPGRADE 2) */}
+                <button
+                  type="button"
+                  onClick={toggleTaskMic}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+                    isTaskListening
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-[0_0_12px_rgba(244,63,94,0.3)] animate-pulse'
+                      : 'bg-slate-900/50 text-slate-400 border-slate-700/60 hover:text-slate-200 hover:bg-slate-800/80 hover:border-slate-600'
+                  }`}
+                  title="Use Web Speech API browser mic as fallback (Hardcoded en-IN)"
+                >
+                  {isTaskListening ? (
+                    <>
+                      <MicOff className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Listening (en-IN)...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Fallback Browser Mic</span>
+                    </>
+                  )}
+                </button>
               </div>
 
               {/* Save to Tab Pill Buttons (Section 2) */}
-              <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+              <div className="mt-4 pt-4 border-t border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs font-bold text-slate-500 mr-1">Save to Tab:</span>
+                  <span className="text-xs font-bold text-slate-400 mr-1.5">Save to Tab:</span>
                   {allTaskTabs.map((tab) => (
                     <button
                       key={tab.id}
                       type="button"
                       onClick={() => setTargetSaveTab(tab.id)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                         targetSaveTab === tab.id
-                          ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/50 shadow-[0_0_10px_rgba(99,102,241,0.2)]'
+                          : 'bg-slate-900/50 text-slate-400 hover:text-slate-200 border border-slate-700/50 hover:bg-slate-800/50'
                       }`}
                     >
                       {tab.name}
@@ -1469,71 +1406,61 @@ This incident log has been scientifically recorded with real-time meteorological
                   type="button"
                   onClick={handleSaveTask}
                   disabled={!taskInputText.trim()}
-                  style={{ minHeight: '48px' }}
-                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold flex items-center gap-2 shadow-sm transition-all active:scale-95"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Save Note</span>
                 </button>
               </div>
-
-              {/* Helper note */}
-              <div className="mt-2 text-right">
-                <button
-                  onClick={() => setMicBlockedHelp((prev) => !prev)}
-                  className="text-[11px] text-slate-400 hover:text-indigo-600 inline-flex items-center gap-1"
-                >
-                  <Info className="w-3 h-3" />
-                  <span>Open in New Browser Tab if Mic is Blocked</span>
-                </button>
-              </div>
             </div>
 
             {/* Task List Header */}
-            <div className="flex items-center justify-between pt-2">
+            <div className="flex items-center justify-between pt-1">
               <div>
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <span>
-                    {allTaskTabs.find((t) => t.id === activeTab)?.name || 'Tasks'}
-                  </span>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>{allTaskTabs.find((t) => t.id === activeTab)?.name || 'Tasks'}</span>
+                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/60">
                     {currentTabTasks.length} {currentTabTasks.length === 1 ? 'item' : 'items'}
                   </span>
                 </h2>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-400 mt-0.5">
                   {allTaskTabs.find((t) => t.id === activeTab)?.desc || 'Manage items in this list'}
                 </p>
               </div>
 
               {completedCount > 0 && (
-                <span className="text-xs text-emerald-600 font-semibold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                <span className="text-xs text-emerald-400 font-semibold bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-500/30">
                   {completedCount} completed
                 </span>
               )}
             </div>
 
-            {/* Task List Items (Empty on first load - Section 1) */}
+            {/* Task List: Empty States (UI UPGRADE 3) */}
             {currentTabTasks.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-10 text-center text-slate-400">
-                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3 text-slate-400">
-                  <CheckSquare className="w-6 h-6" />
+              <div className="bg-slate-800/30 backdrop-blur-md border border-slate-700/40 rounded-2xl p-12 text-center flex flex-col items-center justify-center space-y-3 shadow-xl">
+                <div className="relative flex items-center justify-center">
+                  <div className="absolute inset-0 bg-indigo-500/10 blur-xl rounded-full" />
+                  <Inbox className="w-16 h-16 text-indigo-400 opacity-20 relative z-10" />
                 </div>
-                <h3 className="text-sm font-bold text-slate-700">
-                  No items in {allTaskTabs.find((t) => t.id === activeTab)?.name} yet
-                </h3>
-                <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
-                  Tap the microphone above to speak a note in Indian English or Hinglish, or type to add your first item.
-                </p>
+                <div className="space-y-1">
+                  <h3 className="text-base font-semibold text-slate-200">
+                    All clear! Hold your Wispr Flow hotkey to add a new task to {allTaskTabs.find((t) => t.id === activeTab)?.name || 'this tab'}.
+                  </h3>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    Press <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-indigo-300 text-[11px]">Fn</span> or <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-indigo-300 text-[11px]">Ctrl+Win</span> anywhere, speak naturally, and Wispr Flow will dictate right in.
+                  </p>
+                </div>
               </div>
             ) : (
+              /* Frosted Glass Task Cards (UI UPGRADE 1) */
               <div className="space-y-2.5">
                 {currentTabTasks.map((task) => (
                   <div
                     key={task.id}
-                    className={`bg-white rounded-xl border p-3.5 sm:p-4 transition-all shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                    className={`bg-slate-800/50 backdrop-blur-md border border-slate-700/50 shadow-xl rounded-2xl p-3.5 sm:p-4 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                       task.completed
-                        ? 'border-slate-200 bg-slate-50/70 opacity-75'
-                        : 'border-slate-200 hover:border-slate-300 hover:shadow'
+                        ? 'bg-slate-900/40 border-slate-800/60 opacity-60'
+                        : 'hover:border-slate-600/70 hover:shadow-2xl'
                     }`}
                   >
                     {/* Left: Checkbox & Editable Text */}
@@ -1543,15 +1470,15 @@ This incident log has been scientifically recorded with real-time meteorological
                         onClick={() => handleToggleTask(task.id)}
                         className={`mt-0.5 sm:mt-0 p-1 rounded-lg transition-colors flex-shrink-0 ${
                           task.completed
-                            ? 'text-emerald-600 hover:text-emerald-700'
-                            : 'text-slate-400 hover:text-slate-600'
+                            ? 'text-emerald-400 hover:text-emerald-300'
+                            : 'text-slate-500 hover:text-slate-300'
                         }`}
                         title={task.completed ? 'Mark Incomplete' : 'Mark Complete'}
                       >
                         {task.completed ? (
-                          <CheckSquare className="w-5 h-5 text-emerald-600" />
+                          <CheckSquare className="w-5 h-5 text-emerald-400" />
                         ) : (
-                          <Square className="w-5 h-5 text-slate-400" />
+                          <Square className="w-5 h-5 text-slate-500" />
                         )}
                       </button>
 
@@ -1566,19 +1493,19 @@ This incident log has been scientifically recorded with real-time meteorological
                               if (e.key === 'Escape') setEditingTaskId(null);
                             }}
                             autoFocus
-                            className="flex-1 px-3 py-1.5 rounded-lg border border-indigo-400 text-sm text-slate-900 focus:outline-none"
+                            className="flex-1 px-3 py-1.5 rounded-xl bg-slate-900 border border-indigo-500 text-sm text-white focus:outline-none"
                           />
                           <button
                             type="button"
                             onClick={() => handleSaveEdit(task.id)}
-                            className="p-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                            className="p-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 shadow-sm"
                           >
                             <Save className="w-4 h-4" />
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditingTaskId(null)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200"
                           >
                             <X className="w-4 h-4" />
                           </button>
@@ -1592,14 +1519,14 @@ This incident log has been scientifically recorded with real-time meteorological
                             }}
                             className={`text-sm cursor-pointer break-words ${
                               task.completed
-                                ? 'line-through text-slate-400'
-                                : 'text-slate-800 font-medium'
+                                ? 'line-through text-slate-500'
+                                : 'text-slate-100 font-medium'
                             }`}
                             title="Click to edit task"
                           >
                             {task.text}
                           </p>
-                          <span className="text-[10px] text-slate-400">
+                          <span className="text-[10px] text-slate-500">
                             {new Date(task.createdAt).toLocaleTimeString([], {
                               hour: '2-digit',
                               minute: '2-digit',
@@ -1609,46 +1536,43 @@ This incident log has been scientifically recorded with real-time meteorological
                       )}
                     </div>
 
-                    {/* Right: Move to Another Tab Dropdown + Delete */}
-                    <div className="flex items-center justify-between sm:justify-end gap-2 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 flex-shrink-0">
-                      {/* Move to another tab dropdown */}
+                    {/* Right: Move to Another Tab Dropdown & Actions */}
+                    <div className="flex items-center justify-between sm:justify-end gap-2 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-700/40 flex-shrink-0">
                       <div className="flex items-center gap-1.5">
-                        <MoveRight className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
+                        <MoveRight className="w-3.5 h-3.5 text-slate-500 hidden sm:block" />
                         <select
                           value={task.tabId}
                           onChange={(e) => handleMoveTask(task.id, e.target.value)}
-                          className="text-xs bg-slate-100 border border-slate-200 text-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                          className="text-xs bg-slate-900/80 border border-slate-700 text-slate-300 rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                           title="Move to another tab"
                         >
                           <option disabled value="">
                             Move to...
                           </option>
                           {allTaskTabs.map((tab) => (
-                            <option key={tab.id} value={tab.id}>
+                            <option key={tab.id} value={tab.id} className="bg-slate-900 text-slate-200">
                               {tab.name}
                             </option>
                           ))}
                         </select>
                       </div>
 
-                      {/* Edit button */}
                       <button
                         type="button"
                         onClick={() => {
                           setEditingTaskId(task.id);
                           setEditingText(task.text);
                         }}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors"
                         title="Edit text"
                       >
                         <Edit3 className="w-4 h-4" />
                       </button>
 
-                      {/* Delete trash button */}
                       <button
                         type="button"
                         onClick={() => handleDeleteTask(task.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
                         title="Delete task"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -1659,32 +1583,32 @@ This incident log has been scientifically recorded with real-time meteorological
               </div>
             )}
 
-            {/* Bottom Actions: Clear Completed and Clear All in Tab (Section 1) */}
+            {/* Bottom Actions: Clear Completed and Clear All in Tab */}
             {currentTabTasks.length > 0 && (
-              <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={handleClearCompleted}
                   disabled={completedCount === 0}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 bg-slate-800/40 hover:bg-slate-800 hover:text-slate-200 border border-slate-700/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                 >
                   Clear Completed ({completedCount})
                 </button>
 
                 {showClearConfirm ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-red-600 font-bold">Clear all in this tab?</span>
+                    <span className="text-xs text-rose-400 font-bold">Clear all tasks in tab?</span>
                     <button
                       type="button"
                       onClick={handleClearAllInTab}
-                      className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700"
+                      className="px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-500 shadow-sm"
                     >
                       Yes, Clear All
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowClearConfirm(false)}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 text-slate-700 text-xs font-semibold"
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
                     >
                       Cancel
                     </button>
@@ -1693,7 +1617,7 @@ This incident log has been scientifically recorded with real-time meteorological
                   <button
                     type="button"
                     onClick={() => setShowClearConfirm(true)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors"
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-all"
                   >
                     Clear All in Tab
                   </button>
@@ -1704,34 +1628,34 @@ This incident log has been scientifically recorded with real-time meteorological
         )}
 
         {/* ===================================================================
-            VIEW 2: READBACK VERIFIER (TAB 6)
+            VIEW 2: READBACK VERIFIER (TAB 6 - UI UPGRADE 4)
             =================================================================== */}
         {activeTab === 'verifier' && (
           <div className="space-y-6">
             {/* Header info */}
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 sm:p-5">
-              <div className="flex items-center gap-2.5 text-emerald-800 font-bold text-base">
-                <ShieldCheck className="w-5 h-5 text-emerald-600" />
+            <div className="bg-slate-800/50 backdrop-blur-md border border-emerald-500/30 shadow-xl rounded-2xl p-5">
+              <div className="flex items-center gap-2.5 text-emerald-400 font-bold text-base">
+                <ShieldCheck className="w-5 h-5 text-emerald-400" />
                 <span>Spoken Handoff Verifier</span>
               </div>
-              <p className="mt-1 text-xs text-emerald-700 leading-relaxed">
-                Prevents misheard critical constraints (numbers, quantities, negations like "nahi/mat/bina", and conditions like "before/after") during verbal handoffs between two people.
+              <p className="mt-1 text-xs text-slate-300 leading-relaxed">
+                Prevents misheard critical constraints (quantities, negations like "nahi/mat/bina", and conditions like "before/after") during verbal handoffs between two people.
               </p>
 
               {/* Sample Scenarios for 1-Click Testing */}
-              <div className="mt-3 pt-3 border-t border-emerald-200/60 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-emerald-800">Quick Test Scenarios:</span>
+              <div className="mt-3.5 pt-3.5 border-t border-slate-700/60 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-slate-400">Quick Test Scenarios:</span>
                 <button
                   type="button"
                   onClick={loadScenario1}
-                  className="px-3 py-1.5 rounded-lg bg-white text-emerald-800 hover:bg-emerald-100 border border-emerald-300 text-xs font-semibold shadow-sm transition-colors"
+                  className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-all shadow-xs"
                 >
                   Scenario 1: Pharmacy 15 vs 50 / Hinglish Negation
                 </button>
                 <button
                   type="button"
                   onClick={loadScenario2}
-                  className="px-3 py-1.5 rounded-lg bg-white text-emerald-800 hover:bg-emerald-100 border border-emerald-300 text-xs font-semibold shadow-sm transition-colors"
+                  className="px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition-all shadow-xs"
                 >
                   Scenario 2: Cash Delivery / Time Condition
                 </button>
@@ -1740,37 +1664,37 @@ This incident log has been scientifically recorded with real-time meteorological
 
             {/* Box 1: Speaker Instruction */}
             <div
-              className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5 transition-all ${
+              className={`bg-slate-800/50 backdrop-blur-md border border-slate-700/50 shadow-xl rounded-2xl p-5 sm:p-6 transition-all ${
                 isPassPhoneLocked ? 'relative overflow-hidden' : ''
               }`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center justify-center font-bold text-xs">
                     1
                   </span>
                   <span>Speaker Instruction (Person 1)</span>
                 </span>
                 {isSpeakerListening && (
-                  <span className="text-xs text-red-600 font-semibold animate-pulse flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-red-600 animate-ping" />
-                    Listening ({speechLang})...
+                  <span className="text-xs text-rose-400 font-semibold animate-pulse flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                    Listening (en-IN)...
                   </span>
                 )}
               </div>
 
               {/* Pass Phone Mode Blur Overlay */}
               {isPassPhoneLocked ? (
-                <div className="my-2 p-8 rounded-xl bg-slate-900/90 text-white text-center flex flex-col items-center justify-center gap-2 border border-slate-800 shadow-inner">
+                <div className="my-2 p-8 rounded-xl bg-slate-950/80 backdrop-blur-lg text-white text-center flex flex-col items-center justify-center gap-2.5 border border-slate-700 shadow-inner">
                   <Lock className="w-8 h-8 text-amber-400 animate-bounce" />
-                  <p className="font-bold text-sm">Speaker Text Locked & Hidden</p>
-                  <p className="text-xs text-slate-300 max-w-sm">
-                    Pass the phone to Person 2. They will speak what they understood in Box 2 without reading this instruction.
+                  <p className="font-bold text-sm text-slate-100">Speaker Instruction Locked & Hidden</p>
+                  <p className="text-xs text-slate-400 max-w-sm">
+                    Pass the phone to Person 2. They will speak what they understood in Box 2 without peeking at this instruction.
                   </p>
                   <button
                     type="button"
                     onClick={() => setIsPassPhoneLocked(false)}
-                    className="mt-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1.5"
+                    className="mt-2 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 border border-slate-600 flex items-center gap-1.5 transition-all"
                   >
                     <Unlock className="w-3.5 h-3.5" /> Peek / Unlock
                   </button>
@@ -1781,67 +1705,49 @@ This incident log has been scientifically recorded with real-time meteorological
                     value={speakerText}
                     onChange={(e) => setSpeakerText(e.target.value)}
                     rows={3}
-                    placeholder="Speak or type original instruction (e.g., 'Take 15 pills after food, bina pakka bill mat lena and don't pay more than 50 rupees')..."
-                    style={{ fontSize: '16px' }}
-                    className="w-full rounded-xl border border-slate-300 p-3 sm:p-4 text-base min-h-[96px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:text-slate-400"
+                    placeholder="Hold your Wispr Flow hotkey (Fn or Ctrl+Win) to speak speaker instruction..."
+                    className="w-full rounded-xl bg-slate-900/50 border border-slate-700/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 p-4 text-base text-slate-100 placeholder:text-slate-500 min-h-[100px] transition-all"
                   />
-                  <button
-                    type="button"
-                    onClick={toggleSpeakerMic}
-                    style={{ minWidth: '48px', minHeight: '48px' }}
-                    className={`absolute bottom-3 right-3 rounded-xl flex items-center justify-center transition-all shadow-md ${
-                      isSpeakerListening
-                        ? 'bg-red-600 text-white ring-4 ring-red-200'
-                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                    }`}
-                    title={isSpeakerListening ? 'Stop' : 'Speak'}
-                  >
-                    {isSpeakerListening ? (
-                      <MicOff className="w-5 h-5 animate-bounce" />
-                    ) : (
-                      <Mic className="w-5 h-5" />
-                    )}
-                  </button>
                 </div>
               )}
 
               {speakerInterim && (
-                <div className="mt-2 text-xs text-sky-700 italic">
+                <div className="mt-2 text-xs text-sky-400 italic">
                   Live interim: {speakerInterim}
                 </div>
               )}
 
-              {/* Confirmation Chips Extracted from Box 1 */}
+              {/* Confirmation Chips: Vibrant Glowing Tags (UI UPGRADE 4) */}
               {!isPassPhoneLocked && speakerText.trim() && (
-                <div className="mt-3.5 pt-3 border-t border-slate-100 space-y-2">
-                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Extracted Constraints & Confirmation Chips:
+                <div className="mt-4 pt-3.5 border-t border-slate-700/50 space-y-2.5">
+                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    Extracted Confirmation Chips:
                   </div>
 
-                  {/* Numbers & Times Chips */}
+                  {/* Numbers Chips (Glowing Blue) */}
                   {speakerConstraints.numbers.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-indigo-700 font-semibold">Numbers/Times:</span>
+                      <span className="text-xs text-blue-400 font-semibold">Numbers:</span>
                       {speakerConstraints.numbers.map((num) => (
                         <div
                           key={num}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-semibold shadow-xs"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-[0_0_12px_rgba(59,130,246,0.2)] text-xs font-semibold"
                         >
                           <span>{num}</span>
-                          {/* Swap 15 <-> 50 / Teen-Ty Flip button */}
+                          {/* Swap 15 <-> 50 button */}
                           <button
                             type="button"
                             onClick={() => handleTeenTyFlip(num)}
-                            className="px-1.5 py-0.5 rounded bg-indigo-200 hover:bg-indigo-300 text-indigo-800 text-[10px] font-bold"
-                            title="Flip Teen to -Ty (e.g., 15 <-> 50, 13 <-> 30)"
+                            className="px-1.5 py-0.5 rounded-lg bg-blue-500/30 hover:bg-blue-500/50 text-blue-200 text-[10px] font-bold transition-colors"
+                            title="Flip Teen to -Ty (e.g. 15 <-> 50)"
                           >
                             Swap Teen/Ty
                           </button>
-                          {/* Increment / Decrement */}
+                          {/* +/- buttons */}
                           <button
                             type="button"
                             onClick={() => handleAdjustNumber(num, 1)}
-                            className="w-4 h-4 rounded bg-indigo-200 hover:bg-indigo-300 flex items-center justify-center text-indigo-900 text-[10px] font-bold"
+                            className="w-4 h-4 rounded-md bg-blue-500/30 hover:bg-blue-500/50 flex items-center justify-center text-blue-200 text-[10px] font-bold"
                             title="Increment +1"
                           >
                             +
@@ -1849,7 +1755,7 @@ This incident log has been scientifically recorded with real-time meteorological
                           <button
                             type="button"
                             onClick={() => handleAdjustNumber(num, -1)}
-                            className="w-4 h-4 rounded bg-indigo-200 hover:bg-indigo-300 flex items-center justify-center text-indigo-900 text-[10px] font-bold"
+                            className="w-4 h-4 rounded-md bg-blue-500/30 hover:bg-blue-500/50 flex items-center justify-center text-blue-200 text-[10px] font-bold"
                             title="Decrement -1"
                           >
                             -
@@ -1859,14 +1765,14 @@ This incident log has been scientifically recorded with real-time meteorological
                     </div>
                   )}
 
-                  {/* Negation Chips */}
+                  {/* Negations Chips (Glowing Red) */}
                   {speakerConstraints.negations.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-rose-700 font-semibold">Negations:</span>
+                      <span className="text-xs text-red-400 font-semibold">Negations:</span>
                       {speakerConstraints.negations.map((neg) => (
                         <span
                           key={neg}
-                          className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-xs font-semibold"
+                          className="px-3 py-1 rounded-xl bg-red-500/20 text-red-300 border border-red-500/40 shadow-[0_0_12px_rgba(239,68,68,0.2)] text-xs font-semibold"
                         >
                           🚫 {neg}
                         </span>
@@ -1874,14 +1780,14 @@ This incident log has been scientifically recorded with real-time meteorological
                     </div>
                   )}
 
-                  {/* Condition Chips */}
+                  {/* Conditions Chips (Glowing Amber) */}
                   {speakerConstraints.conditions.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-amber-700 font-semibold">Conditions:</span>
+                      <span className="text-xs text-amber-400 font-semibold">Conditions:</span>
                       {speakerConstraints.conditions.map((cond) => (
                         <span
                           key={cond}
-                          className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold"
+                          className="px-3 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.2)] text-xs font-semibold"
                         >
                           ⚡ {cond}
                         </span>
@@ -1891,15 +1797,15 @@ This incident log has been scientifically recorded with real-time meteorological
                 </div>
               )}
 
-              {/* Lock & Hide Speaker Text Button */}
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+              {/* Action Buttons for Box 1 */}
+              <div className="mt-4 pt-3.5 border-t border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={() => setIsPassPhoneLocked(!isPassPhoneLocked)}
                   className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
                     isPassPhoneLocked
-                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                      : 'bg-slate-900/60 hover:bg-slate-900 text-slate-300 border border-slate-700'
                   }`}
                 >
                   {isPassPhoneLocked ? (
@@ -1914,22 +1820,36 @@ This incident log has been scientifically recorded with real-time meteorological
                     </>
                   )}
                 </button>
+
+                {/* Fallback Browser Mic for Speaker */}
+                <button
+                  type="button"
+                  onClick={toggleSpeakerMic}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+                    isSpeakerListening
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
+                      : 'bg-slate-900/50 text-slate-400 border-slate-700/60 hover:text-slate-200'
+                  }`}
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>Fallback Browser Mic</span>
+                </button>
               </div>
             </div>
 
             {/* Box 2: Listener Readback */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
+            <div className="bg-slate-800/50 backdrop-blur-md border border-slate-700/50 shadow-xl rounded-2xl p-5 sm:p-6">
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center justify-center font-bold text-xs">
                     2
                   </span>
                   <span>Listener Readback (Person 2 - What Did You Hear?)</span>
                 </span>
                 {isListenerListening && (
-                  <span className="text-xs text-red-600 font-semibold animate-pulse flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-red-600 animate-ping" />
-                    Listening ({speechLang})...
+                  <span className="text-xs text-rose-400 font-semibold animate-pulse flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                    Listening (en-IN)...
                   </span>
                 )}
               </div>
@@ -1939,66 +1859,60 @@ This incident log has been scientifically recorded with real-time meteorological
                   value={listenerText}
                   onChange={(e) => setListenerText(e.target.value)}
                   rows={3}
-                  placeholder="Person 2 speaks what they understood (e.g. 'Take 50 pills before food, bina pakka bill lena')..."
-                  style={{ fontSize: '16px' }}
-                  className="w-full rounded-xl border border-slate-300 p-3 sm:p-4 text-base min-h-[96px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-400"
+                  placeholder="Hold your Wispr Flow hotkey (Fn or Ctrl+Win) to speak listener readback..."
+                  className="w-full rounded-xl bg-slate-900/50 border border-slate-700/80 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 p-4 text-base text-slate-100 placeholder:text-slate-500 min-h-[100px] transition-all"
                 />
-                <button
-                  type="button"
-                  onClick={toggleListenerMic}
-                  style={{ minWidth: '48px', minHeight: '48px' }}
-                  className={`absolute bottom-3 right-3 rounded-xl flex items-center justify-center transition-all shadow-md ${
-                    isListenerListening
-                      ? 'bg-red-600 text-white ring-4 ring-red-200'
-                      : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                  }`}
-                  title={isListenerListening ? 'Stop' : 'Speak'}
-                >
-                  {isListenerListening ? (
-                    <MicOff className="w-5 h-5 animate-bounce" />
-                  ) : (
-                    <Mic className="w-5 h-5" />
-                  )}
-                </button>
               </div>
 
               {listenerInterim && (
-                <div className="mt-2 text-xs text-sky-700 italic">
+                <div className="mt-2 text-xs text-sky-400 italic">
                   Live interim: {listenerInterim}
                 </div>
               )}
 
-              {/* Compare Button */}
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end">
+              {/* Action Buttons for Box 2 */}
+              <div className="mt-4 pt-3.5 border-t border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={toggleListenerMic}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+                    isListenerListening
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
+                      : 'bg-slate-900/50 text-slate-400 border-slate-700/60 hover:text-slate-200'
+                  }`}
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>Fallback Browser Mic</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleCheckReadback}
                   disabled={!speakerText.trim() || !listenerText.trim()}
-                  style={{ minHeight: '48px' }}
-                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold flex items-center gap-2 shadow-md transition-all active:scale-95"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
                 >
-                  <ShieldCheck className="w-5 h-5" />
+                  <ShieldCheck className="w-4 h-4" />
                   <span>Unblur & Check Readback</span>
                 </button>
               </div>
             </div>
 
-            {/* Verification Results Panel */}
+            {/* Readback Diff Scorecard: Frosted Glass (UI UPGRADE 1 & 4) */}
             {verifierResults && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-5 sm:p-6 space-y-4">
-                <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-indigo-600" />
-                  <span>Constraint Verification Report</span>
+              <div className="bg-slate-800/50 backdrop-blur-md border border-slate-700/50 shadow-2xl rounded-2xl p-5 sm:p-6 space-y-4">
+                <h3 className="font-extrabold text-base text-white flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-indigo-400" />
+                  <span>Constraint Verification Scorecard</span>
                 </h3>
 
                 {/* GREEN: Matched */}
                 {verifierResults.matched.length > 0 && (
-                  <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900">
-                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-emerald-800 mb-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-200 shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-emerald-300 mb-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                       <span>Matched ({verifierResults.matched.length})</span>
                     </div>
-                    <ul className="text-xs space-y-1 list-disc list-inside text-emerald-800">
+                    <ul className="text-xs space-y-1 list-disc list-inside text-emerald-200/90">
                       {verifierResults.matched.map((m, idx) => (
                         <li key={idx}>{m}</li>
                       ))}
@@ -2008,12 +1922,12 @@ This incident log has been scientifically recorded with real-time meteorological
 
                 {/* AMBER: Dropped / Forgotten */}
                 {verifierResults.dropped.length > 0 && (
-                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900">
-                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-amber-800 mb-1.5">
-                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-amber-300 mb-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-400" />
                       <span>Dropped / Forgotten ({verifierResults.dropped.length})</span>
                     </div>
-                    <ul className="text-xs space-y-1 list-disc list-inside text-amber-800">
+                    <ul className="text-xs space-y-1 list-disc list-inside text-amber-200/90">
                       {verifierResults.dropped.map((d, idx) => (
                         <li key={idx}>{d}</li>
                       ))}
@@ -2023,16 +1937,16 @@ This incident log has been scientifically recorded with real-time meteorological
 
                 {/* RED: Contradicted / Wrong Number or Negation */}
                 {verifierResults.contradicted.length > 0 && (
-                  <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900">
-                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-rose-800 mb-1.5">
-                      <XCircle className="w-4 h-4 text-rose-600" />
-                      <span>Contradicted / Wrong Number or Negation ({verifierResults.contradicted.length})</span>
+                  <div className="p-4 rounded-xl bg-rose-950/50 border border-rose-500/50 text-rose-200 shadow-[0_0_15px_rgba(244,63,94,0.2)]">
+                    <div className="flex items-center gap-1.5 font-bold text-xs uppercase tracking-wider text-rose-300 mb-1.5">
+                      <XCircle className="w-4 h-4 text-rose-400" />
+                      <span>Contradicted / Dangerous Inversion ({verifierResults.contradicted.length})</span>
                     </div>
                     <div className="space-y-2 text-xs">
                       {verifierResults.contradicted.map((c, idx) => (
-                        <div key={idx} className="p-2 rounded-lg bg-white/80 border border-rose-200">
-                          <p className="font-bold text-rose-700">{c.item}</p>
-                          <p className="text-rose-800 mt-0.5">{c.reason}</p>
+                        <div key={idx} className="p-2.5 rounded-lg bg-slate-900/80 border border-rose-500/30">
+                          <p className="font-bold text-rose-300">{c.item}</p>
+                          <p className="text-slate-300 mt-0.5">{c.reason}</p>
                         </div>
                       ))}
                     </div>
@@ -2040,9 +1954,9 @@ This incident log has been scientifically recorded with real-time meteorological
                 )}
 
                 {/* Bold 1-sentence "Say This to Fix It" Repair Prompt */}
-                <div className="p-4 rounded-xl bg-indigo-900 text-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-950/80 via-slate-900 to-indigo-950/80 border border-indigo-500/40 shadow-[0_0_20px_rgba(99,102,241,0.2)] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex-1">
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                       <span>Say This to Fix It:</span>
                     </div>
@@ -2055,7 +1969,7 @@ This incident log has been scientifically recorded with real-time meteorological
                     <button
                       type="button"
                       onClick={() => handleSpeakRepair(verifierResults.repairPrompt)}
-                      className="px-3 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
                       title="Read aloud repair prompt"
                     >
                       <Volume2 className="w-4 h-4" />
@@ -2067,7 +1981,7 @@ This incident log has been scientifically recorded with real-time meteorological
                         navigator.clipboard.writeText(verifierResults.repairPrompt);
                         alert('Repair prompt copied!');
                       }}
-                      className="px-3 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
                       title="Copy to clipboard"
                     >
                       <Copy className="w-4 h-4" />
@@ -2081,38 +1995,36 @@ This incident log has been scientifically recorded with real-time meteorological
         )}
 
         {/* ===================================================================
-            VIEW 3: ODOUR WITNESS (2 AM) (TAB 7)
+            VIEW 3: ODOUR WITNESS (2 AM - PURE BLACK #000000 & WEATHER WIDGET)
             =================================================================== */}
         {activeTab === 'odour' && (
           <div className="space-y-6">
-            {/* 2 AM Banner */}
-            <div className="p-4 rounded-2xl bg-[#0f1422] border border-amber-500/30 text-amber-300 flex items-start justify-between gap-3 shadow-lg">
+            {/* Pure Black Night Banner (UI UPGRADE 4) */}
+            <div className="p-4 rounded-2xl bg-[#000000] border border-amber-500/40 text-amber-300 flex items-start justify-between gap-3 shadow-[0_0_25px_rgba(245,158,11,0.15)]">
               <div>
                 <div className="flex items-center gap-2 font-black text-base text-amber-400">
                   <Moon className="w-5 h-5 text-amber-400 animate-pulse" />
-                  <span>2:00 AM Odour Witness & Meteorological Verifier</span>
+                  <span>2:00 AM Odour Witness & Meteorological Diagnostics</span>
                 </div>
                 <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                  High-contrast night mode for 2 AM eyes-half-closed use. Verifies nocturnal chemical smells against real-time Open-Meteo wind vectors and boundary layer height trapping.
+                  Deep pure-black (#000000) high-contrast theme for eyes-half-closed comfort. Verifies nocturnal chemical smells against real-time Open-Meteo wind vectors and nocturnal inversion trapping.
                 </p>
               </div>
-              <div className="text-right flex-shrink-0">
-                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                  High Contrast 2 AM
-                </span>
-              </div>
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 flex-shrink-0">
+                Pure #000000 Night
+              </span>
             </div>
 
-            {/* Voice Smell Log & Form */}
-            <div className="bg-[#0f1422] border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-5">
+            {/* Input & Form Card */}
+            <div className="bg-[#050505] border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-6">
               {/* Spoken Smell Log Textarea */}
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center justify-between">
-                  <span>Describe the Smell (Voice or Type):</span>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center justify-between">
+                  <span>Describe the Smell (Wispr Flow or Voice):</span>
                   {isOdourListening && (
-                    <span className="text-red-400 text-xs font-semibold animate-pulse flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                      Listening...
+                    <span className="text-rose-400 text-xs font-semibold animate-pulse flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                      Listening (en-IN)...
                     </span>
                   )}
                 </label>
@@ -2121,74 +2033,55 @@ This incident log has been scientifically recorded with real-time meteorological
                     value={odourNotes}
                     onChange={(e) => setOdourNotes(e.target.value)}
                     rows={2}
-                    placeholder="Speak: 'Woke up at 2 AM with severe plastic burning smell entering through bedroom balcony'..."
-                    style={{ fontSize: '16px' }}
-                    className="w-full rounded-xl bg-[#080b12] border border-slate-700 p-3 sm:p-4 text-base min-h-[80px] text-white focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all placeholder:text-slate-500"
+                    placeholder="Hold your Wispr Flow hotkey (Fn or Ctrl+Win) to describe the smell..."
+                    className="w-full rounded-xl bg-black border border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 p-4 text-base text-slate-100 placeholder:text-slate-600 min-h-[90px] transition-all"
                   />
-                  <button
-                    type="button"
-                    onClick={toggleOdourMic}
-                    style={{ minWidth: '48px', minHeight: '48px' }}
-                    className={`absolute bottom-3 right-3 rounded-xl flex items-center justify-center transition-all ${
-                      isOdourListening
-                        ? 'bg-red-600 text-white ring-4 ring-red-500/30'
-                        : 'bg-amber-500 text-black hover:bg-amber-400'
-                    }`}
-                    title={isOdourListening ? 'Stop' : 'Voice Input'}
-                  >
-                    {isOdourListening ? (
-                      <MicOff className="w-5 h-5 animate-bounce" />
-                    ) : (
-                      <Mic className="w-5 h-5 font-bold" />
-                    )}
-                  </button>
                 </div>
                 {odourInterim && (
                   <div className="mt-1 text-xs text-amber-400 italic">
                     Live interim: {odourInterim}
                   </div>
                 )}
+                <div className="mt-2 text-right">
+                  <button
+                    type="button"
+                    onClick={toggleOdourMic}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-black text-slate-400 hover:text-amber-300 border border-slate-800 hover:border-amber-500/40 transition-all"
+                  >
+                    <Mic className="w-3 h-3" />
+                    <span>Fallback Browser Mic</span>
+                  </button>
+                </div>
               </div>
 
-              {/* 1-Finger Buttons: Intensity (1 to 5) */}
+              {/* Large Circular Progressively-Colored Intensity Buttons (UI UPGRADE 4) */}
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                  1-Finger Intensity Rating (1 = Faint, 5 = Hazardous):
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">
+                  1-Finger Intensity Rating (Progressive Yellow to Deep Red):
                 </label>
-                <div className="grid grid-cols-5 gap-2">
-                  {[1, 2, 3, 4, 5].map((lvl) => {
-                    const colors = [
-                      'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20',
-                      'border-sky-500/40 text-sky-400 hover:bg-sky-500/20',
-                      'border-amber-500/40 text-amber-400 hover:bg-amber-500/20',
-                      'border-orange-500/40 text-orange-400 hover:bg-orange-500/20',
-                      'border-red-500/40 text-red-400 hover:bg-red-500/20',
-                    ];
-                    const activeColors = [
-                      'bg-emerald-500 text-black font-extrabold shadow-lg shadow-emerald-500/20',
-                      'bg-sky-500 text-black font-extrabold shadow-lg shadow-sky-500/20',
-                      'bg-amber-500 text-black font-extrabold shadow-lg shadow-amber-500/20',
-                      'bg-orange-500 text-black font-extrabold shadow-lg shadow-orange-500/20',
-                      'bg-red-600 text-white font-extrabold shadow-lg shadow-red-600/30 animate-pulse',
-                    ];
-
-                    const labels = ['1 (Faint)', '2 (Noticeable)', '3 (Strong)', '4 (Severe)', '5 (Hazardous)'];
-
+                <div className="grid grid-cols-5 gap-2 sm:gap-4 max-w-lg mx-auto">
+                  {[
+                    { lvl: 1, label: 'Faint', desc: 'Noticeable outside', color: 'bg-yellow-400 text-black border-2 border-yellow-300 shadow-[0_0_18px_rgba(250,204,21,0.45)] ring-2 ring-yellow-400/30' },
+                    { lvl: 2, label: 'Moderate', desc: 'Enters room', color: 'bg-amber-500 text-black border-2 border-amber-400 shadow-[0_0_18px_rgba(245,158,11,0.45)] ring-2 ring-amber-500/30' },
+                    { lvl: 3, label: 'Strong', desc: 'Woke me up', color: 'bg-orange-500 text-black border-2 border-orange-400 shadow-[0_0_18px_rgba(249,115,22,0.45)] ring-2 ring-orange-500/30' },
+                    { lvl: 4, label: 'Severe', desc: 'Throat burn', color: 'bg-red-500 text-white border-2 border-red-400 shadow-[0_0_18px_rgba(239,68,68,0.55)] ring-2 ring-red-500/30' },
+                    { lvl: 5, label: 'Hazardous', desc: 'Choking / Toxic', color: 'bg-rose-700 text-white border-2 border-rose-500 shadow-[0_0_24px_rgba(190,18,60,0.7)] ring-2 ring-rose-500/40 animate-pulse' },
+                  ].map((item) => {
+                    const isSelected = odourIntensity === item.lvl;
                     return (
                       <button
-                        key={lvl}
+                        key={item.lvl}
                         type="button"
-                        onClick={() => setOdourIntensity(lvl)}
-                        style={{ minHeight: '48px' }}
-                        className={`rounded-xl border text-xs sm:text-sm font-bold flex flex-col items-center justify-center p-1 transition-all ${
-                          odourIntensity === lvl
-                            ? activeColors[lvl - 1]
-                            : `bg-[#080b12] ${colors[lvl - 1]}`
+                        onClick={() => setOdourIntensity(item.lvl)}
+                        className={`w-14 h-14 sm:w-16 sm:h-16 mx-auto rounded-full flex flex-col items-center justify-center font-bold transition-all duration-200 transform active:scale-95 ${
+                          isSelected
+                            ? `${item.color} scale-105`
+                            : 'bg-slate-900/60 border border-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200'
                         }`}
                       >
-                        <span className="text-base sm:text-lg">{lvl}</span>
-                        <span className="text-[9px] sm:text-[10px] opacity-80 text-center leading-tight">
-                          {labels[lvl - 1]}
+                        <span className="text-base sm:text-lg leading-none">{item.lvl}</span>
+                        <span className="text-[9px] sm:text-[10px] font-semibold tracking-tight mt-0.5 opacity-90">
+                          {item.label}
                         </span>
                       </button>
                     );
@@ -2196,7 +2089,7 @@ This incident log has been scientifically recorded with real-time meteorological
                 </div>
               </div>
 
-              {/* 1-Finger Buttons: Smell Type */}
+              {/* Smell Type */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
                   Smell Signature:
@@ -2215,11 +2108,10 @@ This incident log has been scientifically recorded with real-time meteorological
                         key={type.label}
                         type="button"
                         onClick={() => setOdourType(type.label)}
-                        style={{ minHeight: '48px' }}
                         className={`px-3 py-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all ${
                           isSelected
-                            ? 'bg-amber-400 text-black border-amber-300 font-extrabold shadow-md'
-                            : 'bg-[#080b12] text-slate-300 border-slate-700 hover:border-slate-500'
+                            ? 'bg-amber-400 text-black border-amber-300 font-extrabold shadow-[0_0_12px_rgba(251,191,36,0.3)]'
+                            : 'bg-black text-slate-400 border-slate-800 hover:border-slate-600 hover:text-slate-200'
                         }`}
                       >
                         <IconComponent className="w-4 h-4 flex-shrink-0" />
@@ -2244,7 +2136,7 @@ This incident log has been scientifically recorded with real-time meteorological
                       className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
                         selectedLocation.name === loc.name
                           ? 'bg-slate-200 text-slate-900 border-white font-bold'
-                          : 'bg-[#080b12] text-slate-400 border-slate-700 hover:text-white'
+                          : 'bg-black text-slate-400 border-slate-800 hover:text-white'
                       }`}
                     >
                       <MapPin className="w-3.5 h-3.5 inline mr-1 text-amber-400" />
@@ -2255,7 +2147,7 @@ This incident log has been scientifically recorded with real-time meteorological
                   <button
                     type="button"
                     onClick={handleUseGPS}
-                    className="px-3 py-2 rounded-xl text-xs font-semibold bg-[#080b12] text-cyan-400 border border-cyan-500/40 hover:bg-cyan-500/10 flex items-center gap-1.5 transition-colors"
+                    className="px-3 py-2 rounded-xl text-xs font-semibold bg-black text-cyan-400 border border-cyan-500/40 hover:bg-cyan-500/10 flex items-center gap-1.5 transition-colors"
                   >
                     <Compass className="w-3.5 h-3.5" />
                     <span>Use My Phone GPS</span>
@@ -2273,7 +2165,7 @@ This incident log has been scientifically recorded with real-time meteorological
                   onClick={handleLogAndCheckWind}
                   disabled={isFetchingWeather}
                   style={{ minHeight: '52px' }}
-                  className="w-full rounded-xl bg-amber-400 hover:bg-amber-300 text-black font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-98 transition-all disabled:opacity-50"
+                  className="w-full rounded-xl bg-gradient-to-r from-amber-400 via-amber-300 to-amber-400 hover:brightness-110 text-black font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(251,191,36,0.3)] active:scale-98 transition-all disabled:opacity-50"
                 >
                   {isFetchingWeather ? (
                     <>
@@ -2288,15 +2180,15 @@ This incident log has been scientifically recorded with real-time meteorological
                   )}
                 </button>
                 {weatherError && (
-                  <p className="mt-2 text-xs text-red-400 font-semibold text-center">
+                  <p className="mt-2 text-xs text-rose-400 font-semibold text-center">
                     {weatherError}
                   </p>
                 )}
               </div>
             </div>
 
-            {/* Odour Incident Log History Table */}
-            <div className="space-y-3">
+            {/* Odour Incident Log History: Modern Weather Widget Cards (UI UPGRADE 4) */}
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-extrabold text-sm uppercase tracking-wider text-slate-300 flex items-center gap-2">
                   <Activity className="w-4 h-4 text-amber-400" />
@@ -2308,7 +2200,7 @@ This incident log has been scientifically recorded with real-time meteorological
                     onClick={() => {
                       if (confirm('Clear all odour incident logs?')) setOdourLogs([]);
                     }}
-                    className="text-xs text-slate-500 hover:text-red-400"
+                    className="text-xs text-slate-500 hover:text-rose-400 transition-colors"
                   >
                     Clear Log History
                   </button>
@@ -2316,97 +2208,121 @@ This incident log has been scientifically recorded with real-time meteorological
               </div>
 
               {odourLogs.length === 0 ? (
-                <div className="p-8 rounded-2xl border border-dashed border-slate-800 bg-[#0f1422] text-center text-slate-500">
+                <div className="p-8 rounded-2xl border border-dashed border-slate-800 bg-[#050505] text-center text-slate-500">
                   <Wind className="w-8 h-8 mx-auto mb-2 opacity-30 text-amber-400" />
                   <p className="text-xs">No odour episodes recorded yet.</p>
                   <p className="text-[11px] text-slate-600 mt-0.5">
-                    When woke by foul smell at night, tap "Log & Check Wind" to capture official meteorological evidence.
+                    When woken by chemical smoke at night, tap "Log & Check Wind" to capture atmospheric evidence.
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-3.5">
                   {odourLogs.map((log) => (
+                    /* Modern Weather Widget Card (UI UPGRADE 4) */
                     <div
                       key={log.id}
-                      className="bg-[#0f1422] border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3 shadow-md"
+                      className="bg-slate-900/80 backdrop-blur-md border border-slate-700/60 shadow-2xl rounded-2xl p-5 space-y-4"
                     >
                       {/* Top Header of Card */}
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-800/80 pb-3">
+                        <div className="flex items-center gap-2.5">
                           <span
-                            className={`px-2.5 py-1 rounded-lg text-xs font-black ${
+                            className={`px-3 py-1 rounded-xl text-xs font-black ${
                               log.intensity >= 4
-                                ? 'bg-red-500 text-white animate-pulse'
+                                ? 'bg-rose-600 text-white shadow-[0_0_12px_rgba(225,29,72,0.4)]'
                                 : log.intensity === 3
-                                ? 'bg-amber-400 text-black'
-                                : 'bg-emerald-400 text-black'
+                                ? 'bg-amber-400 text-black shadow-[0_0_12px_rgba(251,191,36,0.3)]'
+                                : 'bg-emerald-400 text-black shadow-[0_0_12px_rgba(52,211,153,0.3)]'
                             }`}
                           >
                             Level {log.intensity}/5
                           </span>
-                          <span className="font-bold text-sm text-white">{log.smellType}</span>
+                          <span className="font-extrabold text-base text-white">{log.smellType}</span>
                         </div>
-                        <span className="text-xs text-slate-400 font-mono">{log.timestamp}</span>
+                        <span className="text-xs text-slate-400 font-mono flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-slate-500" />
+                          <span>{log.timestamp}</span>
+                        </span>
                       </div>
 
-                      {/* Notes */}
+                      {/* Spoken Observation Notes */}
                       {log.notes && (
-                        <p className="text-xs text-slate-300 italic bg-[#080b12] p-2.5 rounded-lg border border-slate-800/80">
+                        <p className="text-xs text-slate-300 italic bg-black/50 p-3 rounded-xl border border-slate-800">
                           "{log.notes}"
                         </p>
                       )}
 
-                      {/* Meteorological Metrics Grid */}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-                        {/* Wind Speed & Direction */}
-                        <div className="p-2.5 rounded-xl bg-[#080b12] border border-slate-800 flex items-center gap-2">
-                          <Wind className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                      {/* Weather Metrics Modern Gauges */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                        {/* Wind Vector Gauge */}
+                        <div className="p-3 rounded-xl bg-black/60 border border-slate-800 flex items-center gap-3">
+                          <div
+                            className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 flex-shrink-0"
+                            style={{ transform: `rotate(${log.windDirection}deg)` }}
+                            title={`Wind coming from ${log.windDirection}°`}
+                          >
+                            <Navigation className="w-4 h-4" />
+                          </div>
                           <div>
-                            <span className="text-[10px] text-slate-500 block">Wind Vector</span>
-                            <span className="font-bold text-slate-200">
+                            <span className="text-[10px] text-slate-500 block uppercase font-bold tracking-wider">
+                              Wind Vector
+                            </span>
+                            <span className="font-bold text-slate-100 text-sm">
                               {log.windSpeed} m/s ({log.cardinalDirection})
                             </span>
                           </div>
                         </div>
 
-                        {/* Boundary Layer Height */}
-                        <div className="p-2.5 rounded-xl bg-[#080b12] border border-slate-800 flex items-center gap-2">
-                          <Layers className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                        {/* Boundary Layer Height Meter */}
+                        <div className="p-3 rounded-xl bg-black/60 border border-slate-800 flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                            log.boundaryLayerHeight < 150
+                              ? 'bg-rose-500/10 border border-rose-500/30 text-rose-400'
+                              : 'bg-indigo-500/10 border border-indigo-500/30 text-indigo-400'
+                          }`}>
+                            <Layers className="w-4 h-4" />
+                          </div>
                           <div>
-                            <span className="text-[10px] text-slate-500 block">Boundary Layer</span>
-                            <span className="font-bold text-slate-200">
-                              {log.boundaryLayerHeight} m
+                            <span className="text-[10px] text-slate-500 block uppercase font-bold tracking-wider">
+                              Inversion Boundary
+                            </span>
+                            <span className={`font-bold text-sm ${log.boundaryLayerHeight < 150 ? 'text-rose-300' : 'text-slate-100'}`}>
+                              {log.boundaryLayerHeight} meters
                             </span>
                           </div>
                         </div>
 
                         {/* Location */}
-                        <div className="col-span-2 sm:col-span-1 p-2.5 rounded-xl bg-[#080b12] border border-slate-800 flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                        <div className="p-3 rounded-xl bg-black/60 border border-slate-800 flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0">
+                            <MapPin className="w-4 h-4" />
+                          </div>
                           <div className="truncate">
-                            <span className="text-[10px] text-slate-500 block">Location</span>
-                            <span className="font-bold text-slate-200 truncate block">
+                            <span className="text-[10px] text-slate-500 block uppercase font-bold tracking-wider">
+                              Location
+                            </span>
+                            <span className="font-bold text-slate-100 text-sm truncate block">
                               {log.locationName}
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Atmospheric Assessment Badge */}
-                      <div className="p-3 rounded-xl bg-[#080b12] border border-slate-800 text-xs leading-relaxed space-y-1">
+                      {/* Atmospheric Assessment Badge (Glowing Widgets) */}
+                      <div className="p-3.5 rounded-xl bg-black/60 border border-slate-800 text-xs leading-relaxed space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
                           {log.isUpwindPlume && (
-                            <span className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 text-[10px] font-bold">
-                              UPWIND PLUME ACTIVE (≥ 1.5 m/s)
+                            <span className="px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.25)] text-[10px] font-black uppercase tracking-wider">
+                              [UPWIND PLUME ACTIVE]
                             </span>
                           )}
                           {log.isInversionTrapping && (
-                            <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 text-[10px] font-bold">
-                              NOCTURNAL INVERSION TRAPPING (&lt; 150m)
+                            <span className="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-[0_0_12px_rgba(244,63,94,0.25)] text-[10px] font-black uppercase tracking-wider">
+                              [NOCTURNAL INVERSION TRAPPING]
                             </span>
                           )}
                         </div>
-                        <p className="text-slate-300 text-xs mt-1">{log.assessment}</p>
+                        <p className="text-slate-300 text-xs">{log.assessment}</p>
                       </div>
 
                       {/* Card Footer Actions */}
@@ -2414,7 +2330,7 @@ This incident log has been scientifically recorded with real-time meteorological
                         <button
                           type="button"
                           onClick={() => handleCopyComplaint(log)}
-                          className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                          className="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
                         >
                           <Share2 className="w-3.5 h-3.5" />
                           <span>Copy Formal Complaint Report</span>
@@ -2423,7 +2339,7 @@ This incident log has been scientifically recorded with real-time meteorological
                         <button
                           type="button"
                           onClick={() => handleDeleteOdourLog(log.id)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
                           title="Delete entry"
                         >
                           <Trash2 className="w-4 h-4" />
